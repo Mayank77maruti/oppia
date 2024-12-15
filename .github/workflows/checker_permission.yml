@@ -32,4 +32,4 @@ jobs:
             exit 0  # Continue workflow
           fi
           echo "Permissions not granted"
-          exit 1  # Halt workflow
+          exit 1  # Halt workflow added
