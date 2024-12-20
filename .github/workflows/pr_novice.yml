@@ -9,16 +9,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check if the PR creator has zero merged PRs
+      # Step 1: Check if the PR creator has exactly 0 merged PRs
       - name: Check if User Has Zero Merged PRs
         uses: actions/github-script@v4
+        id: check-merged-prs
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { pull_request, repository } = context.payload;
             const owner = repository.owner.login;
             const repo = repository.name;
-            const issueNumber = pull_request.number;
             const username = pull_request.user.login;
 
             // Fetch all PRs from the user (closed ones)
@@ -36,21 +36,41 @@ jobs:
 
             // Check if the user has zero merged PRs
             const hasZeroMergedPR = mergedPRs.length === 0;
-            if (hasZeroMergedPR) {
-              // Send a reminder to the contributor with the PTAL message
-              await github.issues.createComment({
-                owner,
-                repo,
-                issue_number: issueNumber,
-                body: `Hello @${username}! It looks like this is your first PR and you have no merged PRs yet. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
-              });
-            }
+            
+            // Output the result of merged PR check as an output variable
+            return hasZeroMergedPR ? 'true' : 'false';
+        
+      # Step 2: Skip workflow if user has more than 0 merged PRs
+      - name: Skip Workflow if User Has Merged PRs
+        if: steps.check-merged-prs.outputs.result == 'false'
+        run: |
+          echo "User has more than 0 merged PRs, skipping the remaining workflow steps."
+          exit 0  # Exit the workflow if the user has more than 0 merged PRs
 
-            // Export the count of merged PRs for later use
-            core.exportVariable('PR_COUNT', mergedPRs.length);
+      # Step 3: If user has 0 merged PRs, send reminder and assign reviewers
+      - name: Send Reminder and Assign Reviewers
+        if: steps.check-merged-prs.outputs.result == 'true'
+        uses: actions/github-script@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { pull_request, repository } = context.payload;
+            const owner = repository.owner.login;
+            const repo = repository.name;
+            const issueNumber = pull_request.number;
+            const username = pull_request.user.login;
 
-      # Step 2: Assign reviewers based on CODEOWNERS
+            // Send a reminder to the contributor with the PTAL message
+            await github.issues.createComment({
+              owner,
+              repo,
+              issue_number: issueNumber,
+              body: `Hello @${username}! It looks like this is your first PR and you have no merged PRs yet. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
+            });
+
+      # Step 4: Assign reviewers based on CODEOWNERS
       - name: Assign CODEOWNERS as Assignees
+        if: steps.check-merged-prs.outputs.result == 'true'
         uses: actions/github-script@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -59,10 +79,6 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = pull_request.number;
-            const username = pull_request.user.login;
-
-            // Get the count of merged PRs from the previous step
-            const prCount = parseInt(process.env.PR_COUNT);
 
             // Hardcoded reviewers for testing (replace with actual GitHub usernames)
             const reviewersToAssign = ["Fgrdxgu"];  // Replace with actual reviewers
