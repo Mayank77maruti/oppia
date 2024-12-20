@@ -1,0 +1,90 @@
+name: Assign Reviewers on PR Creation
+
+on:
+  pull_request:
+    types: [opened]  # Trigger only when a PR is created
+
+jobs:
+  assign-reviewers:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check if the PR creator has exactly 1 merged PR
+      - name: Check if User Has Exactly One Merged PR
+        uses: actions/github-script@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { pull_request, repository } = context.payload;
+            const owner = repository.owner.login;
+            const repo = repository.name;
+            const issueNumber = pull_request.number;
+            const username = pull_request.user.login;
+            // Fetch all PRs from the user (closed ones)
+            const userPRs = await github.pulls.list({
+              owner,
+              repo,
+              state: "closed",
+              per_page: 100,  // Adjust per_page if needed
+              sort: "created",
+              direction: "asc",
+            });
+            // Filter to get merged PRs
+            const mergedPRs = userPRs.data.filter(pr => pr.merged_at);
+            // Check if the user has exactly 1 merged PR
+            const hasOneMergedPR = mergedPRs.length === 1;
+            if (hasOneMergedPR) {
+              // Send a reminder to the contributor with the PTAL message
+              await github.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: Hello @${username}! It looks like you have your first PR with 1 merged PR. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL If you're unsure who to ask, feel free to reach out to the team.
+              });
+            }
+            
+      # Step 2: Assign reviewers based on CODEOWNERS
+      - name: Assign CODEOWNERS as Assignees
+        uses: actions/github-script@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { pull_request } = context.payload;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = pull_request.number;
+            // Hardcoded reviewers for testing (replace with actual GitHub usernames)
+            const reviewersToAssign = ["Fgrdxgu"]; 
+            if (reviewersToAssign.length > 0) {
+              // Assign individual reviewers as assignees
+              await github.issues.addAssignees({
+                owner,
+                repo,
+                issue_number: prNumber,
+                assignees: reviewersToAssign,
+              });
+              console.log(Assigned reviewers: ${reviewersToAssign.join(", ")});
+              // Prepare the comment to notify the reviewer(s)
+              const commentBody = Hello @${pull_request.user.login}! Thank you for making a PR.Please make sure that your PR is assigned to the correct reviewers -- check the "Assignees" section in the sidebar on the right. Typically, this should match the "Reviewers" section. If it is not correct, you can leave a comment with the syntax \@reviewer_username PTAL\` to request that a specific reviewer be assigned.@${reviewersToAssign.join(' @')} please take a look at this pull request!If you have any questions or need further help, feel free to reach out. @${pull_request.user.login} feel free to add any comments or ask for changes.Thanks!`;
+              // Comment with the review request
+              await github.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: commentBody,
+              });
+            } else {
+              // Notify if no reviewers were found based on CODEOWNERS or hardcoded
+              console.log("No reviewers found in CODEOWNERS. Notifying team.");
+              await github.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: No individual reviewers were found by GitHub based on the CODEOWNERS file. @oppia/dev-workflow-reviewers Could you please review the PR? Thank you!,
+              });
+            }
+            // Check if there are teams requested for review (if needed)
+            const requestedTeams = pull_request.requested_teams.map(t => t.slug);
+            if (requestedTeams.length > 0) {
+              console.log(Teams requested for review: ${requestedTeams.join(", ")});
+            }
