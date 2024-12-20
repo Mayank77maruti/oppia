@@ -7,7 +7,7 @@ In addition to developing the Oppia platform, the team has developed free and ef
 The Oppia web application is built using Python, Angular, and Google App Engine. See also:
 
 - [Oppia.org community site](https://www.oppia.org)
-- [User Documentation](https://oppia.github.io/)
+- [User Documentation](https://oppia.github.io/)\
 - [Contributors' wiki](https://github.com/oppia/oppia/wiki)
 - [GitHub Discussions](https://github.com/oppia/oppia/discussions)
 - [Developer announcements](http://groups.google.com/group/oppia-dev)
