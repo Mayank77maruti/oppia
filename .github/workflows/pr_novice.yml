@@ -9,8 +9,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check if the PR creator has exactly 1 merged PR
-      - name: Check if User Has Exactly One Merged PR
+      # Step 1: Check if the PR creator has exactly 0 merged PRs
+      - name: Check if User Has Zero Merged PRs
         uses: actions/github-script@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -34,15 +34,15 @@ jobs:
             // Filter to get merged PRs
             const mergedPRs = userPRs.data.filter(pr => pr.merged_at);
 
-            // Check if the user has exactly 1 merged PR
-            const hasOneMergedPR = mergedPRs.length === 1;
-            if (hasOneMergedPR) {
+            // Check if the user has zero merged PRs
+            const hasZeroMergedPR = mergedPRs.length === 0;
+            if (hasZeroMergedPR) {
               // Send a reminder to the contributor with the PTAL message
               await github.issues.createComment({
                 owner,
                 repo,
                 issue_number: issueNumber,
-                body: `Hello @${username}! It looks like you have your first PR with 1 merged PR. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
+                body: `Hello @${username}! It looks like this is your first PR and you have no merged PRs yet. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
               });
             }
 
