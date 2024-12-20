@@ -5,7 +5,7 @@ Oppia is an online learning tool that enables anyone to easily create and share 
 In addition to developing the Oppia platform, the team has developed free and effective [lessons](https://www.oppia.org/fractions) on basic mathematics, and we are planning to expand our educational offering to basic science and financial literacy. These lessons help learners who lack appropriate access to educational resourc
 The Oppia web application is built using Python, Angular, and Google App Engine. See also:
 
-- [Oppia.org community site](https://www.oppia.org)
+- [Oppia.org community site](https://www.oppia.org
 - [User Documentation](https://oppia.github.io/)\
 - [Contributors' wiki](https://github.com/oppia/oppia/wiki)
 - [GitHub Discussions](https://github.com/oppia/oppia/discussions)
