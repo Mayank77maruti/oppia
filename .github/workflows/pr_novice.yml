@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check if the PR creator has exactly 0 merged PRs
+      # Step 1: Check if the PR creator has zero merged PRs
       - name: Check if User Has Zero Merged PRs
         uses: actions/github-script@v4
         with:
@@ -46,6 +46,9 @@ jobs:
               });
             }
 
+            // Export the count of merged PRs for later use
+            core.exportVariable('PR_COUNT', mergedPRs.length);
+
       # Step 2: Assign reviewers based on CODEOWNERS
       - name: Assign CODEOWNERS as Assignees
         uses: actions/github-script@v4
@@ -56,6 +59,10 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = pull_request.number;
+            const username = pull_request.user.login;
+
+            // Get the count of merged PRs from the previous step
+            const prCount = parseInt(process.env.PR_COUNT);
 
             // Hardcoded reviewers for testing (replace with actual GitHub usernames)
             const reviewersToAssign = ["Fgrdxgu"];  // Replace with actual reviewers
