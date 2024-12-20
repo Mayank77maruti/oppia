@@ -9,113 +9,110 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check if the PR creator has exactly 0 merged PRs
-      - name: Check if User Has Zero Merged PRs
-        uses: actions/github-script@v4
-        id: check-merged-prs
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { pull_request, repository } = context.payload;
-            const owner = repository.owner.login;
-            const repo = repository.name;
-            const username = pull_request.user.login;
-
-            // Fetch all PRs from the user (closed ones)
-            const userPRs = await github.pulls.list({
-              owner,
-              repo,
-              state: "closed",
-              per_page: 100,  // Adjust per_page if needed
-              sort: "created",
-              direction: "asc",
-            });
-
-            // Filter to get merged PRs
-            const mergedPRs = userPRs.data.filter(pr => pr.merged_at);
-
-            // Check if the user has zero merged PRs
-            const hasZeroMergedPR = mergedPRs.length === 0;
-            
-            // Output the result of merged PR check as an output variable
-            return hasZeroMergedPR ? 'true' : 'false';
-        
-      # Step 2: Skip workflow if user has more than 0 merged PRs
-      - name: Skip Workflow if User Has Merged PRs
-        if: steps.check-merged-prs.outputs.result == 'false'
+      # Step 1: Set Environment Variables for PR Author, Repository, and Owner
+      - name: Set Environment Variables
+        env:
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          REPO: ${{ github.event.repository.name }}
+          OWNER: ${{ github.event.repository.owner.login }}
         run: |
-          echo "User has more than 0 merged PRs, skipping the remaining workflow steps."
-          exit 0  # Exit the workflow if the user has more than 0 merged PRs
+          echo "AUTHOR=${AUTHOR}" >> $GITHUB_ENV
+          echo "REPO=${REPO}" >> $GITHUB_ENV
+          echo "OWNER=${OWNER}" >> $GITHUB_ENV
 
-      # Step 3: If user has 0 merged PRs, send reminder and assign reviewers
+      # Step 2: Count Merged Pull Requests for the User
+      - name: Count Merged Pull Requests
+        id: count_merged_pull_requests
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const author = process.env.AUTHOR;
+            const repo = process.env.REPO;
+            const owner = process.env.OWNER;
+            const { data } = await github.rest.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} type:pr state:closed author:${author}`
+            });
+            const mergedPRs = data.items.filter(pr => pr.pull_request.merged_at);
+            const prCount = mergedPRs.length;
+            core.exportVariable('PR_COUNT', prCount); // Exporting variable for later steps
+
+      # Step 3: Send Reminder and Assign Reviewers if User Has No Merged PRs
       - name: Send Reminder and Assign Reviewers
-        if: steps.check-merged-prs.outputs.result == 'true'
         uses: actions/github-script@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { pull_request, repository } = context.payload;
+            const prCount = parseInt(process.env.PR_COUNT, 10); // Ensure integer conversion
             const owner = repository.owner.login;
             const repo = repository.name;
             const issueNumber = pull_request.number;
             const username = pull_request.user.login;
 
-            // Send a reminder to the contributor with the PTAL message
-            await github.issues.createComment({
-              owner,
-              repo,
-              issue_number: issueNumber,
-              body: `Hello @${username}! It looks like this is your first PR and you have no merged PRs yet. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
-            });
+            if (prCount === 0) {
+              // Send a reminder to the contributor
+              await github.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: `Hello @${username}! It looks like this is your first PR and you have no merged PRs yet. Please make sure to assign reviewers! To assign a reviewer, you can comment with the following syntax: @reviewer_username PTAL. If you're unsure who to ask, feel free to reach out to the team.`,
+              });
+            } else {
+              console.log(`User @${username} has merged PRs. Skipping reviewer assignment.`);
+            }
 
-      # Step 4: Assign reviewers based on CODEOWNERS
+      # Step 4: Assign Reviewers Based on CODEOWNERS or Hardcoded Reviewers
       - name: Assign CODEOWNERS as Assignees
-        if: steps.check-merged-prs.outputs.result == 'true'
         uses: actions/github-script@v4
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { pull_request } = context.payload;
+            const prCount = parseInt(process.env.PR_COUNT, 10); // Ensure integer conversion
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = pull_request.number;
 
-            // Hardcoded reviewers for testing (replace with actual GitHub usernames)
-            const reviewersToAssign = ["Fgrdxgu"];  // Replace with actual reviewers
+            if (prCount === 0) {
+              // Hardcoded reviewers for testing (replace with actual GitHub usernames)
+              const reviewersToAssign = ["Fgrdxgu"]; // Replace with actual reviewers
 
-            if (reviewersToAssign.length > 0) {
-              // Assign individual reviewers as assignees
-              await github.issues.addAssignees({
-                owner,
-                repo,
-                issue_number: prNumber,
-                assignees: reviewersToAssign,
-              });
-              console.log(`Assigned reviewers: ${reviewersToAssign.join(", ")}`);
+              if (reviewersToAssign.length > 0) {
+                // Assign individual reviewers as assignees
+                await github.issues.addAssignees({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  assignees: reviewersToAssign,
+                });
+                console.log(`Assigned reviewers: ${reviewersToAssign.join(", ")}`);
 
-              // Prepare the comment to notify the reviewer(s)
-              const commentBody = `Hello @${pull_request.user.login}! Thank you for making a PR. Please make sure that your PR is assigned to the correct reviewers -- check the "Assignees" section in the sidebar on the right. Typically, this should match the "Reviewers" section. If it is not correct, you can leave a comment with the syntax \`@reviewer_username PTAL\` to request that a specific reviewer be assigned. @${reviewersToAssign.join(' @')} please take a look at this pull request! If you have any questions or need further help, feel free to reach out. @${pull_request.user.login} feel free to add any comments or ask for changes. Thanks!`;
+                // Comment to notify the reviewers
+                const commentBody = `Hello @${pull_request.user.login}! Thank you for making a PR. Please make sure that your PR is assigned to the correct reviewers -- check the "Assignees" section in the sidebar on the right. Typically, this should match the "Reviewers" section. If it is not correct, you can leave a comment with the syntax \`@reviewer_username PTAL\` to request that a specific reviewer be assigned. @${reviewersToAssign.join(' @')} please take a look at this pull request! If you have any questions or need further help, feel free to reach out. @${pull_request.user.login} feel free to add any comments or ask for changes. Thanks!`;
 
-              // Comment with the review request
-              await github.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: commentBody,
-              });
+                await github.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: commentBody,
+                });
+              } else {
+                // Notify if no reviewers were found based on CODEOWNERS or hardcoded
+                console.log("No reviewers found in CODEOWNERS. Notifying team.");
+                await github.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: `No individual reviewers were found by GitHub based on the CODEOWNERS file. @oppia/dev-workflow-reviewers Could you please review the PR? Thank you!`,
+                });
+              }
+
+              // Log requested teams for review, if any
+              const requestedTeams = pull_request.requested_teams.map(t => t.slug);
+              if (requestedTeams.length > 0) {
+                console.log(`Teams requested for review: ${requestedTeams.join(", ")}`);
+              }
             } else {
-              // Notify if no reviewers were found based on CODEOWNERS or hardcoded
-              console.log("No reviewers found in CODEOWNERS. Notifying team.");
-              await github.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: `No individual reviewers were found by GitHub based on the CODEOWNERS file. @oppia/dev-workflow-reviewers Could you please review the PR? Thank you!`,
-              });
-            }
-
-            // Check if there are teams requested for review (if needed)
-            const requestedTeams = pull_request.requested_teams.map(t => t.slug);
-            if (requestedTeams.length > 0) {
-              console.log(`Teams requested for review: ${requestedTeams.join(", ")}`);
+              console.log(`PR creator has merged PRs. Reviewer assignment not required.`);
             }
