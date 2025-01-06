@@ -32,7 +32,7 @@ jobs:
             const author = process.env.AUTHOR;
             const repo = process.env.REPO;
             const owner = process.env.OWNER;
-            const { data } = await github.rest.search.issuesAndPullRequests({
+            const { data } = await octokit.rest.search.issuesAndPullRequests({
               q: `repo:${owner}/${repo} type:pr state:closed author:${author}`
             });
             const prCount = data.items.filter(pr => pr.pull_request?.merged_at).length;
@@ -69,7 +69,7 @@ jobs:
             // Assign reviewers as assignees
             if (requestedReviewers.length > 0) {
               try {
-                await github.issues.addAssignees({
+                await octokit.rest.issues.addAssignees({
                   owner,
                   repo,
                   issue_number: prNumber,
@@ -84,7 +84,7 @@ jobs:
             // Notify team if no individual reviewers are found
             if (requestedReviewers.length === 0) {
               try {
-                await github.issues.createComment({
+                await octokit.rest.issues.createComment({
                   owner,
                   repo,
                   issue_number: prNumber,
@@ -100,7 +100,7 @@ jobs:
             if (submitterIsNewContributor) {
               try {
                 const commentBody = `Hello @${submitterUsername}! Thank you for making a PR. Please ensure your PR is assigned to the correct reviewers -- check the "Assignees" section in the sidebar on the right. Typically, this should match the "Reviewers" section. If it's not correct, you can leave a comment with the syntax \`@reviewer_username PTAL\` to request that a specific reviewer be assigned.\n\n Thanks!`;
-                await github.issues.createComment({
+                await octokit.rest.issues.createComment({
                   owner,
                   repo,
                   issue_number: prNumber,
