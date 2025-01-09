@@ -1,16 +1,48 @@
-name: Check for Merge Conflicts
+name: Auto Label Conflicts
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
+  push:
+    branches: [develop]  # Trigger on pushes to the `develop` branch
+  pull_request:
+    branches: [develop]  # Trigger on PRs targeting the `develop` branch
 
 jobs:
-  triage:
+  auto-label:
     runs-on: ubuntu-latest
     steps:
-      - name: Label merge conflicts
-        uses: mschilde/auto-label-merge-conflicts@master
+      - name: Create label if it doesn't exist
+        uses: actions/github-script@v6
         with:
-          CONFLICT_LABEL_NAME: "PR: don't merge - HAS MERGE CONFLICTS"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const labelName = "has conflict";
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: labelName,
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: labelName,
+                  color: "d73a4a",  # Red color for visibility
+                  description: "This PR has merge conflicts and cannot be merged.",
+                });
+              } else {
+                throw error;
+              }
+            }
+
+      - uses: prince-chrismc/label-merge-conflicts-action@v3
+        with:
+          conflict_label_name: "has conflict"  # Label to apply when conflicts are detected
+          github_token: ${{ github.token }}  # GitHub token for authentication
+          detect_merge_changes: false  # Set to `true` to detect merge changes as conflicts
+          conflict_comment: |  # Custom comment to notify the PR author
+            :wave: Hi, @${author}!
+            Due to recent changes in the `develop` branch, this PR now has a merge conflict. 
+            Please sync your branch with the `develop` branch to resolve the conflict. 
+            If you need help, you can follow [this guide](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-on-github).
+            Thanks! :pray:
