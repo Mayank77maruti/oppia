@@ -3,8 +3,6 @@ name: Auto Label Conflicts
 on:
   push:
     branches: [develop]  # Trigger on pushes to the `develop` branch
-  pull_request:
-    types: [synchronize]  # Trigger when the PR branch is updated
 
 jobs:
   main:
@@ -16,17 +14,20 @@ jobs:
       - name: Get the associated pull request
         id: pr-details
         run: |
-          # Fetch the PR associated with the commit on develop branch
-          pr_info=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls?base=develop&head=${{ github.actor }}:develop")
+          # Get the commit SHA from the current commit
+          COMMIT_SHA=${{ github.sha }}
           
+          # Query GitHub API to find PR(s) that contain the commit
+          pr_info=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/pulls")
+
           # Check if the PR exists and extract PR number and author
           PR_NUMBER=$(echo "$pr_info" | jq '.[0].number')
           AUTHOR=$(echo "$pr_info" | jq '.[0].user.login' | tr -d '"')
 
           # Ensure we found a PR
           if [ -z "$PR_NUMBER" ]; then
-            echo "No associated PR found for the commit to develop."
+            echo "No associated PR found for the commit."
             exit 1
           fi
 
