@@ -1,15 +1,13 @@
 name: Notify or Auto-Sync Critical PRs
 
 on:
-  push:
-    branches:
-      - develop
   pull_request_target:
-    types: 
-      - synchronize
+    types:
+      - merged  # Trigger when the PR is merged or closed
 
 jobs:
   notify_or_sync:
+    if: github.event.pull_request.merged == true  # Run only if the PR is merged
     runs-on: ubuntu-latest
 
     permissions:
@@ -22,35 +20,31 @@ jobs:
         uses: actions/checkout@v3
 
       # Step 2: Fetch PR metadata
-      - name: Fetch PR metadata
+      - name: Check for Critical Label
         id: fetch_pr
         uses: actions/github-script@v6
         with:
           script: |
             const pr = context.payload.pull_request;
-            if (!pr) {
-              core.setFailed("No pull request context available.");
-            } else {
-              const labels = pr.labels.map(label => label.name);
-              core.setOutput("is_critical", labels.includes("PR: require post-merge sync to HEAD"));
-              core.setOutput("pr_author", pr.user.login);
-              core.setOutput("pr_number", pr.number);
-            }
+            const labels = pr.labels.map(label => label.name);
+            const isCritical = labels.includes("PR: require post-merge sync to HEAD");
+            core.setOutput("is_critical", isCritical);
+            core.setOutput("pr_author", pr.user.login);
+            core.setOutput("pr_number", pr.number);
 
-      # Step 3: Notify or Sync Branches
-      - name: Notify or Auto-Sync
+      # Step 3: Notify or Sync
+      - name: Notify PR Author
         if: steps.fetch_pr.outputs.is_critical == 'true'
         run: |
-          echo "Critical PR detected. Notifying or auto-syncing..."
-          # Notify PR Author via Comment
+          echo "Notifying PR author about required sync..."
           gh pr comment ${{ steps.fetch_pr.outputs.pr_number }} --body "Your PR is critical and requires syncing with HEAD. Please sync your branch using the following commands:"
 
-      # Step 4 (Optional): Auto-Merge Branches
-      - name: Auto-Merge Critical Branch
-        if: needs.auto_merge
+      # Step 4 (Optional): Auto-Sync Branch
+      - name: Auto-Sync Critical Branch
+        if: steps.fetch_pr.outputs.is_critical == 'true'
         run: |
-          echo "Auto-merging critical branch to HEAD..."
+          echo "Auto-syncing critical branch..."
           git fetch origin develop
-          git checkout ${{ steps.fetch_pr.outputs.pr_branch }}
+          git checkout ${{ github.event.pull_request.head.ref }}
           git merge develop
-          git push origin ${{ steps.fetch_pr.outputs.pr_branch }}
+          git push origin ${{ github.event.pull_request.head.ref }}
