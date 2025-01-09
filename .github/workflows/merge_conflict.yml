@@ -2,10 +2,9 @@ name: Auto Label Conflicts
 
 on:
   push:
-    branches: [develop]  # Trigger on pushes to the `develop` branch
+    branches: [develop] # Trigger on pushes to the `develop` branch
   pull_request_target:
-    types: [synchronize]  # Trigger when the PR branch is updated
-  workflow_dispatch:  # Allow manual triggering of the workflow
+    types: [synchronize] # Trigger when the PR branch is updated
 
 jobs:
   main:
@@ -19,55 +18,23 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
           REPO: ${{ github.event.repository.name }}
           OWNER: ${{ github.event.repository.owner.login }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           echo "AUTHOR=${AUTHOR}" >> $GITHUB_ENV
           echo "REPO=${REPO}" >> $GITHUB_ENV
           echo "OWNER=${OWNER}" >> $GITHUB_ENV
-          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
-
-      - name: Create label if it doesn't exist
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const labelName = "PR: don't merge - HAS MERGE CONFLICTS";
-            try {
-              await github.rest.issues.getLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: labelName,
-              });
-            } catch (error) {
-              if (error.status === 404) {
-                await github.rest.issues.createLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: labelName,
-                  color: "d73a4a",  # Red color for visibility
-                  description: "This PR has merge conflicts and cannot be merged.",
-                });
-              } else {
-                throw error;
-              }
-            }
 
       - name: Check if PRs have merge conflicts
         uses: eps1lon/actions-label-merge-conflict@v3
         with:
-          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS"
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          removeOnDirtyLabel: ""  # Optional: Label to remove when conflicts exist
+          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS" # Label to add when conflicts exist
+          repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
+          removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
           commentOnDirty: |
-            Hi @${{ env.AUTHOR }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict. 
-            Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged. 
+            Hi @${{ env.AUTHOR }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
+            Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
             Thanks!
-          commentOnClean: ""  # Optional: Comment when conflicts are resolved
 
-      - name: Assign PR to author if conflicts exist
-        if: ${{ env.AUTHOR && env.PR_NUMBER }}  # Ensure AUTHOR and PR_NUMBER are set
-        run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d '{"assignees": ["${{ env.AUTHOR }}"]}' \
-            "https://api.github.com/repos/${{ env.OWNER }}/${{ env.REPO }}/issues/${{ env.PR_NUMBER }}/assignees"
+      - name: Assign PR to the author
+        uses: peter-evans/assign-pull-request@v2
+        with:
+          assignees: ${{ env.AUTHOR }}
