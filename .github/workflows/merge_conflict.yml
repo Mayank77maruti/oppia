@@ -2,7 +2,9 @@ name: Auto Label Conflicts
 
 on:
   push:
-    branches: [develop]  # Trigger on pushes to the `develop` branch
+    branches: [develop] # Trigger on pushes to the `develop` branch
+  pull_request_target:
+    types: [synchronize] # Trigger when the PR branch is updated
 
 jobs:
   main:
@@ -11,47 +13,112 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get the associated pull request
-        id: pr-details
+      - name: Set environment variables
+        id: set-env
         run: |
-          # Get the commit SHA from the current commit
-          COMMIT_SHA=${{ github.sha }}
-          
-          # Query GitHub API to find PR(s) that contain the commit
-          pr_info=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/commits/$COMMIT_SHA/pulls")
+          echo "AUTHOR=${{ github.event.pull_request.user.login }}" >> $GITHUB_ENV
+          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
+          echo "OWNER=${{ github.event.repository.owner.login }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
-          # Check if the PR exists and extract PR number and author
-          PR_NUMBER=$(echo "$pr_info" | jq '.[0].number')
-          AUTHOR=$(echo "$pr_info" | jq '.[0].user.login' | tr -d '"')
-
-          # Ensure we found a PR
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No associated PR found for the commit."
-            exit 1
-          fi
-
-          # Set environment variables for further steps
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
-          echo "AUTHOR=$AUTHOR" >> $GITHUB_ENV
-
-      - name: Check if PR has merge conflicts
+      - name: Check if PRs have merge conflicts
         uses: eps1lon/actions-label-merge-conflict@v3
         with:
-          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS"  # Label to add when conflicts exist
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"  # GitHub token for authentication
-          removeOnDirtyLabel: ""  # Optional: Leave this blank as no label is removed
+          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS" # Label to add when conflicts exist
+          repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
+          removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
           commentOnDirty: |
-            Hi @${{ env.AUTHOR }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
+            Hi @${{ github.event.pull_request.user.login }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
             Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
             Thanks!
 
-      - name: Install curl
-        run: sudo apt-get install curl
+  additional-check:
+    runs-on: ubuntu-latest
+    needs: main # Ensure this job runs after the `main` job
+    steps:
+      - name: Fetch PRs without conflict label and author assigned
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const repo = github.context.repo;
+            const branch = 'develop';
+            const labelToCheck = 'PR: don\'t merge - HAS MERGE CONFLICTS';
 
-      - name: Assign PR to the author
+            const getPRs = async () => {
+              let page = 1;
+              let prs = [];
+              while (true) {
+                const response = await github.rest.pulls.list({
+                  owner: repo.owner,
+                  repo: repo.repo,
+                  state: 'open',
+                  base: branch,
+                  per_page: 100,
+                  page: page,
+                });
+                if (response.data.length === 0) break;
+                prs = prs.concat(response.data);
+                page++;
+              }
+              return prs;
+            };
+
+            const prs = await getPRs();
+
+            const prsToProcess = prs.filter(pr => {
+              // Check if the label is not present
+              const hasLabel = pr.labels.some(label => label.name === labelToCheck);
+              if (hasLabel) return false;
+
+              // Check if the author is assigned to the PR
+              const isAuthorAssigned = pr.assignees.some(assignee => assignee.login === pr.user.login);
+              if (isAuthorAssigned) return true;
+
+              return false;
+            });
+
+            // Output the PR numbers for logging
+            console.log(`Found ${prsToProcess.length} PRs to process:`);
+            prsToProcess.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
+
+            // Write PR numbers to a file for later steps if needed
+            fs.writeFileSync('prs-to-process.txt', prsToProcess.map(pr => pr.number).join('\n'));
+
+      - name: Read PR numbers
         run: |
-          curl -X POST \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -d '{"assignees":["${{ env.AUTHOR }}"]}' \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/assignees"
+          echo "PRs to process:"
+          cat prs-to-process.txt
+
+      - name: Perform action on PRs
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const prNumbers = fs.readFileSync('prs-to-process.txt', 'utf8').split('\n').filter(n => n);
+
+            for (const prNumber of prNumbers) {
+              // Example action: add a comment to the PR
+              await github.rest.issues.createComment({
+                owner: github.context.repo.owner,
+                repo: github.context.repo.repo,
+                issue_number: prNumber,
+                body: `Hi @${{ github.context.payload.pull_request.user.login }}, please review your PR.`,
+              });
+
+              // Example action: assign the PR author to the PR
+              const pr = await github.rest.pulls.get({
+                owner: github.context.repo.owner,
+                repo: github.context.repo.repo,
+                pull_number: prNumber,
+              });
+
+              await github.rest.issues.addAssignees({
+                owner: github.context.repo.owner,
+                repo: github.context.repo.repo,
+                issue_number: prNumber,
+                assignees: [pr.data.user.login],
+              });
+            }
