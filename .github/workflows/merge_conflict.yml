@@ -2,9 +2,9 @@ name: Auto Label Conflicts
 
 on:
   push:
-    branches: [develop] # Trigger on pushes to the `develop` branch
+    branches: [develop]  # Trigger on pushes to the `develop` branch
   pull_request_target:
-    types: [synchronize] # Trigger when the PR branch is updated
+    types: [synchronize]  # Trigger when the PR branch is updated
 
 jobs:
   main:
@@ -24,9 +24,9 @@ jobs:
       - name: Check if PRs have merge conflicts
         uses: eps1lon/actions-label-merge-conflict@v3
         with:
-          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS" # Label to add when conflicts exist
-          repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
-          removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
+          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS"  # Label to add when conflicts exist
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"  # GitHub token for authentication
+          removeOnDirtyLabel: ""  # Optional: Leave this blank as no label is removed
           commentOnDirty: |
             Hi @${{ github.event.pull_request.user.login }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
             Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
@@ -34,18 +34,19 @@ jobs:
 
   additional-check:
     runs-on: ubuntu-latest
-    needs: main # Ensure this job runs after the `main` job
+    needs: main
     steps:
-      - name: Fetch PRs without conflict label and author assigned
+      - name: Fetch PRs with conflict label
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const repo = github.context.repo;
-            const branch = 'develop';
-            const labelToCheck = 'PR: don\'t merge - HAS MERGE CONFLICTS';
-
+            const labelToCheck = 'PR: don\'t merge - HAS MERGE CONFLICTS';  // The conflict label
+            const repo = {
+              owner: "${{ github.repository_owner }}",
+              repo: "${{ github.event.repository.name }}",
+            };
+            
             const getPRs = async () => {
               let page = 1;
               let prs = [];
@@ -53,8 +54,8 @@ jobs:
                 const response = await github.rest.pulls.list({
                   owner: repo.owner,
                   repo: repo.repo,
-                  state: 'open',
-                  base: branch,
+                  state: 'open',  // Only open PRs
+                  labels: labelToCheck,  // Filter PRs with the conflict label
                   per_page: 100,
                   page: page,
                 });
@@ -67,31 +68,20 @@ jobs:
 
             const prs = await getPRs();
 
-            const prsToProcess = prs.filter(pr => {
-              // Check if the label is not present
-              const hasLabel = pr.labels.some(label => label.name === labelToCheck);
-              if (hasLabel) return false;
-
-              // Check if the author is assigned to the PR
-              const isAuthorAssigned = pr.assignees.some(assignee => assignee.login === pr.user.login);
-              if (isAuthorAssigned) return true;
-
-              return false;
-            });
-
-            // Output the PR numbers for logging
-            console.log(`Found ${prsToProcess.length} PRs to process:`);
-            prsToProcess.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
+            // Output PR numbers for logging
+            console.log(`Found ${prs.length} PRs with the conflict label:`);
+            prs.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
 
             // Write PR numbers to a file for later steps if needed
-            fs.writeFileSync('prs-to-process.txt', prsToProcess.map(pr => pr.number).join('\n'));
+            const prNumbers = prs.map(pr => pr.number);
+            fs.writeFileSync('prs-to-process.txt', prNumbers.join('\n'));
 
       - name: Read PR numbers
         run: |
           echo "PRs to process:"
           cat prs-to-process.txt
 
-      - name: Perform action on PRs
+      - name: Assign PR authors
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -100,25 +90,26 @@ jobs:
             const prNumbers = fs.readFileSync('prs-to-process.txt', 'utf8').split('\n').filter(n => n);
 
             for (const prNumber of prNumbers) {
-              // Example action: add a comment to the PR
-              await github.rest.issues.createComment({
-                owner: github.context.repo.owner,
-                repo: github.context.repo.repo,
-                issue_number: prNumber,
-                body: `Hi @${{ github.context.payload.pull_request.user.login }}, please review your PR.`,
-              });
-
-              // Example action: assign the PR author to the PR
+              // Fetch the PR details
               const pr = await github.rest.pulls.get({
-                owner: github.context.repo.owner,
-                repo: github.context.repo.repo,
+                owner: "${{ github.repository_owner }}",
+                repo: "${{ github.event.repository.name }}",
                 pull_number: prNumber,
               });
 
+              // Assign the PR author to the PR
               await github.rest.issues.addAssignees({
-                owner: github.context.repo.owner,
-                repo: github.context.repo.repo,
+                owner: "${{ github.repository_owner }}",
+                repo: "${{ github.event.repository.name }}",
                 issue_number: prNumber,
                 assignees: [pr.data.user.login],
+              });
+
+              // Optionally, add a comment to notify the author
+              await github.rest.issues.createComment({
+                owner: "${{ github.repository_owner }}",
+                repo: "${{ github.event.repository.name }}",
+                issue_number: prNumber,
+                body: `Hi @${pr.data.user.login}, your PR has a merge conflict. Please resolve it.`
               });
             }
