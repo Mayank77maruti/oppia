@@ -1,0 +1,56 @@
+name: Notify or Auto-Sync Critical PRs
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request_target:
+    types: 
+      - synchronize
+
+jobs:
+  notify_or_sync:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Step 2: Fetch PR metadata
+      - name: Fetch PR metadata
+        id: fetch_pr
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed("No pull request context available.");
+            } else {
+              const labels = pr.labels.map(label => label.name);
+              core.setOutput("is_critical", labels.includes("PR: require post-merge sync to HEAD"));
+              core.setOutput("pr_author", pr.user.login);
+              core.setOutput("pr_number", pr.number);
+            }
+
+      # Step 3: Notify or Sync Branches
+      - name: Notify or Auto-Sync
+        if: steps.fetch_pr.outputs.is_critical == 'true'
+        run: |
+          echo "Critical PR detected. Notifying or auto-syncing..."
+          # Notify PR Author via Comment
+          gh pr comment ${{ steps.fetch_pr.outputs.pr_number }} --body "Your PR is critical and requires syncing with HEAD. Please sync your branch using the following commands:"
+
+      # Step 4 (Optional): Auto-Merge Branches
+      - name: Auto-Merge Critical Branch
+        if: needs.auto_merge
+        run: |
+          echo "Auto-merging critical branch to HEAD..."
+          git fetch origin develop
+          git checkout ${{ steps.fetch_pr.outputs.pr_branch }}
+          git merge develop
+          git push origin ${{ steps.fetch_pr.outputs.pr_branch }}
