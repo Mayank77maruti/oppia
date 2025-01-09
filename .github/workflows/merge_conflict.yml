@@ -36,74 +36,73 @@ jobs:
     runs-on: ubuntu-latest
     needs: main
     steps:
-      - name: Fetch PRs with conflict label
-        uses: actions/github-script@v6
-        id: fetch-prs
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const labelToCheck = 'PR: don\'t merge - HAS MERGE CONFLICTS';  // The conflict label
-            const repo = {
-              owner: "${{ github.repository_owner }}",
-              repo: "${{ github.event.repository.name }}",
-            };
-            
-            const getPRs = async () => {
-              let page = 1;
-              let prs = [];
-              while (true) {
-                const response = await github.rest.pulls.list({
-                  owner: repo.owner,
-                  repo: repo.repo,
-                  state: 'open',  // Only open PRs
-                  labels: labelToCheck,  // Filter PRs with the conflict label
-                  per_page: 100,
-                  page: page,
-                });
-                if (response.data.length === 0) break;
-                prs = prs.concat(response.data);
-                page++;
-              }
-              return prs;
-            };
+    - name: Fetch PRs with conflict label
+      uses: actions/github-script@v6
+      id: fetch-prs
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const labelToCheck = 'PR: don\'t merge - HAS MERGE CONFLICTS'; // The conflict label
+          const repo = {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          };
 
-            const prs = await getPRs();
-
-            // Output PR numbers for logging
-            console.log(`Found ${prs.length} PRs with the conflict label:`);
-            prs.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
-
-            // Return the PR numbers as output
-            return prs.map(pr => pr.number).join(',');
-
-      - name: Assign PR authors
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const prNumbers = "${{ steps.fetch-prs.outputs.result }}".split(',');
-
-            for (const prNumber of prNumbers) {
-              // Fetch the PR details
-              const pr = await github.rest.pulls.get({
-                owner: "${{ github.repository_owner }}",
-                repo: "${{ github.event.repository.name }}",
-                pull_number: prNumber,
+          const getPRs = async () => {
+            let page = 1;
+            let prs = [];
+            while (true) {
+              const response = await github.rest.pulls.list({
+                owner: repo.owner,
+                repo: repo.repo,
+                state: 'open', // Only open PRs
+                per_page: 100,
+                page: page,
               });
-
-              // Assign the PR author to the PR
-              await github.rest.issues.addAssignees({
-                owner: "${{ github.repository_owner }}",
-                repo: "${{ github.event.repository.name }}",
-                issue_number: prNumber,
-                assignees: [pr.data.user.login],
-              });
-
-              // Optionally, add a comment to notify the author
-              await github.rest.issues.createComment({
-                owner: "${{ github.repository_owner }}",
-                repo: "${{ github.event.repository.name }}",
-                issue_number: prNumber,
-                body: `Hi @${pr.data.user.login}, your PR has a merge conflict. Please resolve it.`
-              });
+              if (response.data.length === 0) break;
+              prs = prs.concat(response.data);
+              page++;
             }
+            return prs.filter(pr => pr.labels.some(label => label.name === labelToCheck));
+          };
+
+          const prs = await getPRs();
+          console.log(`Found ${prs.length} PRs with the conflict label:`);
+          prs.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
+
+          // Set output for subsequent steps
+          return prs.map(pr => pr.number).join(',');
+        result-encoding: string
+        outputs:
+          pr-numbers: ${{ steps.fetch-prs.outputs.result }}
+
+    - name: Assign PR authors
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const prNumbers = "${{ steps.fetch-prs.outputs.pr-numbers }}".split(',').filter(n => n);
+          for (const prNumber of prNumbers) {
+            // Fetch the PR details
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(prNumber),
+            });
+
+            // Assign the PR author to the PR
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(prNumber),
+              assignees: [pr.data.user.login],
+            });
+
+            // Optionally, add a comment to notify the author
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(prNumber),
+              body: `Hi @${pr.data.user.login}, your PR has a merge conflict. Please resolve it.`,
+            });
+          }
