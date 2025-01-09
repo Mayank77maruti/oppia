@@ -36,27 +36,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: main
     steps:
-      - name: Fetch PRs with the conflict label
-        uses: peter-evans/find-pull-requests@v3
-        id: find-prs
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          state: open
-          label: "PR: don't merge - HAS MERGE CONFLICTS"
-          sort: updated
-
-      - name: Notify and assign PR authors
-        if: steps.find-prs.outputs.prs != '[]'
-        uses: peter-evans/create-or-update-comment@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          issue-number: ${{ fromJSON(steps.find-prs.outputs.prs)[0].number }}
-          body: |
-            Hi @${{ fromJSON(steps.find-prs.outputs.prs)[0].user.login }},
-            Your PR has a merge conflict. Please resolve it so that it can be reviewed and merged.
-
-      - name: Assign PR authors
-        if: steps.find-prs.outputs.prs != '[]'
-        uses: andymckay/assign-to-author@v2
+      - name: Find Pull Requests with Merge Conflict Label
+        uses: juliangruber/find-pull-request-action@v1.9.0
+        id: find-conflict-prs
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          labels: "PR: don't merge - HAS MERGE CONFLICTS"  # Label indicating conflicts
+          state: open  # Only open PRs
+
+      - name: Assign PR creators
+        if: steps.find-conflict-prs.outputs.result != ''
+        uses: thomaseizinger/assign-pr-creator-action@v1.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
