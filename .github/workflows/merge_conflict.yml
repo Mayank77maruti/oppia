@@ -38,6 +38,7 @@ jobs:
     steps:
       - name: Fetch PRs with conflict label
         uses: actions/github-script@v6
+        id: fetch-prs
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -72,22 +73,15 @@ jobs:
             console.log(`Found ${prs.length} PRs with the conflict label:`);
             prs.forEach(pr => console.log(`#${pr.number} - ${pr.title}`));
 
-            // Write PR numbers to a file for later steps if needed
-            const prNumbers = prs.map(pr => pr.number);
-            fs.writeFileSync('prs-to-process.txt', prNumbers.join('\n'));
-
-      - name: Read PR numbers
-        run: |
-          echo "PRs to process:"
-          cat prs-to-process.txt
+            // Return the PR numbers as output
+            return prs.map(pr => pr.number).join(',');
 
       - name: Assign PR authors
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
-            const prNumbers = fs.readFileSync('prs-to-process.txt', 'utf8').split('\n').filter(n => n);
+            const prNumbers = "${{ steps.fetch-prs.outputs.result }}".split(',');
 
             for (const prNumber of prNumbers) {
               // Fetch the PR details
