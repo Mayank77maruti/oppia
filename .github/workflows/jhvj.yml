@@ -3,6 +3,7 @@ name: Find PR Author and Number
 on:
   pull_request_target:
     types: [synchronize, opened]  # Trigger for PR events like updates or creation
+  workflow_dispatch:
 
 jobs:
   find-pr-info:
