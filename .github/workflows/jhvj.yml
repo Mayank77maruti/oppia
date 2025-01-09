@@ -1,0 +1,24 @@
+name: Find PR Author and Number
+
+on:
+  pull_request_target:
+    types: [synchronize, opened]  # Trigger for PR events like updates or creation
+
+jobs:
+  find-pr-info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find Triggering Pull Request
+        id: find-pr
+        uses: peternied/find-triggering-pr@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Output PR Details
+        if: steps.find-pr.outputs.number != ''
+        run: |
+          echo "Pull Request Number: ${{ steps.find-pr.outputs.number }}"
+          echo "Pull Request Author: ${{ steps.find-pr.outputs.author }}"
