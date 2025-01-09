@@ -28,42 +28,5 @@ jobs:
           repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
           removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
 
-      - name: Install curl
-        run: sudo apt-get install curl
-
-      - name: Check for merge conflicts and assign PR to author (using JS)
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const owner = process.env.OWNER;
-            const repo = process.env.REPO;
-            const prNumber = process.env.PR_NUMBER;
-            const author = process.env.AUTHOR;
-
-            // Check if the PR has merge conflicts by using the GitHub API
-            const prDetails = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: prNumber
-            });
-
-            if (prDetails.data.mergeable === false) {
-              // Add a comment if there are merge conflicts
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: `Hi @${author}. Due to recent changes in the "develop" branch, this PR now has a merge conflict. Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) to resolve it. Thanks!`
-              });
-
-              // Assign the PR to the author
-              await github.rest.issues.addAssignees({
-                owner,
-                repo,
-                issue_number: prNumber,
-                assignees: [author]
-              });
-            } else {
-              console.log("No merge conflicts detected.");
-            }
+      - name: Assign PR to the author
+        uses: technote-space/assign-author@v1
