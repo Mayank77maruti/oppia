@@ -14,16 +14,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set environment variables
-        env:
-          AUTHOR: ${{ github.event.pull_request.user.login }}
-          REPO: ${{ github.event.repository.name }}
-          OWNER: ${{ github.event.repository.owner.login }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+        id: set-env
         run: |
-          echo "AUTHOR=${AUTHOR}" >> $GITHUB_ENV
-          echo "REPO=${REPO}" >> $GITHUB_ENV
-          echo "OWNER=${OWNER}" >> $GITHUB_ENV
-          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
+          echo "AUTHOR=${{ github.event.pull_request.user.login }}" >> $GITHUB_ENV
+          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
+          echo "OWNER=${{ github.event.repository.owner.login }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
 
       - name: Check if PRs have merge conflicts
         uses: eps1lon/actions-label-merge-conflict@v3
@@ -32,7 +28,7 @@ jobs:
           repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
           removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
           commentOnDirty: |
-            Hi @${{ env.AUTHOR }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
+            Hi @${{ github.event.pull_request.user.login }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
             Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
             Thanks!
 
@@ -42,13 +38,13 @@ jobs:
       - name: Authenticate GitHub CLI
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh auth login --with-token <<< "${GITHUB_TOKEN}"
+        run: |
+          echo $GITHUB_TOKEN | gh auth login --with-token
 
       - name: Assign PR to the author
         env:
           AUTHOR: ${{ env.AUTHOR }}
           PR_NUMBER: ${{ env.PR_NUMBER }}
-          OWNER: ${{ env.OWNER }}
-          REPO: ${{ env.REPO }}
         run: |
+          echo "Assigning PR #$PR_NUMBER to $AUTHOR"
           gh pr edit $PR_NUMBER --add-assignee $AUTHOR
