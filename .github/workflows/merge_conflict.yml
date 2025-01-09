@@ -26,10 +26,26 @@ jobs:
           repoToken: "${{ secrets.GITHUB_TOKEN }}" # GitHub token for authentication
           removeOnDirtyLabel: "" # Optional: Leave this blank as no label is removed
 
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
       - name: List PRs with merge conflicts
         id: list-prs
         run: |
-          PRS_WITH_CONFLICTS=$(gh pr list --state open --label "PR: don't merge - HAS MERGE CONFLICTS" --json number,author --jq '.[] | "\(.number) \(.author.login)"')
+          PAGE=1
+          PER_PAGE=100
+          PRS_WITH_CONFLICTS=""
+          while true; do
+            RESPONSE=$(curl -s -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&label=PR:%20don%27t%20merge%20-%20HAS%20MERGE%20CONFLICTS&page=$PAGE&per_page=$PER_PAGE")
+            PRS=$(echo $RESPONSE | jq -r '.[] | "\(.number) \(.user.login)"')
+            if [ -z "$PRS" ]; then
+              break
+            fi
+            PRS_WITH_CONFLICTS="${PRS_WITH_CONFLICTS} ${PRS}"
+            PAGE=$((PAGE+1))
+          done
           echo "PRS_WITH_CONFLICTS=${PRS_WITH_CONFLICTS}" >> $GITHUB_ENV
 
       - name: Assign PRs to authors
@@ -37,7 +53,7 @@ jobs:
           for pr in $PRS_WITH_CONFLICTS; do
             PR_NUMBER=$(echo $pr | cut -d' ' -f1)
             AUTHOR=$(echo $pr | cut -d' ' -f2)
-            gh pr edit $PR_NUMBER --add-assignee $AUTHOR
+            curl -s -X PATCH -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $GITHUB_TOKEN" -d "{\"assignees\": [\"$AUTHOR\"]}" "https://api.github.com/repos/${OWNER}/${REPO}/pulls/$PR_NUMBER"
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
