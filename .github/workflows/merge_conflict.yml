@@ -1,83 +1,16 @@
-name: Check Open PRs for Conflicts After Merge
+name: Check for Merge Conflicts
 
 on:
   pull_request_target:
-    types:
-      - closed
-    branches:
-      - develop
+    types: [opened, synchronize, reopened]
 
 jobs:
-  check-open-prs-for-conflicts:
-    if: github.event.pull_request.merged == true
+  triage:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Label merge conflicts
+        uses: mschilde/auto-label-merge-conflicts@master
         with:
-          ref: develop
-
-      - name: Fetch all branches
-        run: git fetch --all --prune
-
-      - name: Get list of open PRs
-        id: get-open-prs
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const { data: openPRs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              base: 'develop',
-            });
-            return openPRs.map(pr => pr.number);
-
-      - name: Check for conflicts in open PRs
-        run: |
-          OPEN_PRS=${{ steps.get-open-prs.outputs.result }}
-          echo "Open PRs: $OPEN_PRS"
-
-          for PR_NUMBER in $OPEN_PRS; do
-            echo "Checking PR #$PR_NUMBER for conflicts..."
-
-            PR_HEAD_REF=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | jq -r '.head.ref')
-
-            if [ -z "$PR_HEAD_REF" ]; then
-              echo "Invalid head ref for PR #$PR_NUMBER. Skipping..."
-              continue
-            fi
-
-            git fetch origin $PR_HEAD_REF
-
-            # Check for merge conflicts
-            if ! git merge --no-commit --no-ff origin/$PR_HEAD_REF; then
-              echo "PR #$PR_NUMBER has conflicts."
-
-              PR_AUTHOR=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" | jq -r '.user.login')
-
-              CONFLICT_HELP_LINK="https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-on-github"
-
-              # Notify the PR author
-              curl -X POST \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                -d '{"body": "Hi @'"$PR_AUTHOR"'. Due to recent changes in the \"develop\" branch, this PR now has a merge conflict. Please follow [this link]('"$CONFLICT_HELP_LINK"') if you need help resolving the conflict. Thanks!"}' \
-                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments"
-
-              # Add a label to the PR
-              curl -X POST \
-                -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                -d '{"labels": ["PR: don't merge - HAS MERGE CONFLICTS"]}' \
-                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/labels"
-            else
-              echo "PR #$PR_NUMBER has no conflicts."
-            fi
-
-            # Abort the merge
-            git merge --abort || true
-          done
+          CONFLICT_LABEL_NAME: "PR: don't merge - HAS MERGE CONFLICTS"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
