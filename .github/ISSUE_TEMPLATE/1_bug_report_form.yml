@@ -3,10 +3,7 @@ description: Create a report to help us improve
 title: "[BUG]: "
 labels: [triage needed, bug]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for taking the time to report a bug in the Oppia project.
+
   - type: markdown
     attributes:
       value: |
