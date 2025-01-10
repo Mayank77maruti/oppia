@@ -1,7 +1,7 @@
 name: Sync PR Branches
 
 on:
-  pull_request:
+  pull_request_target:
     types:
       - closed
   push:
@@ -21,4 +21,7 @@ jobs:
       - name: Run autoupdate
         uses: docker://chinthakagodawita/autoupdate-action:v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN with base repo permissions
+        with:
+          target_branch: ${{ github.event.pull_request.base.ref }}  # Use the PR target branch
+          skip_conflict_prs: true  # Skip PRs with merge conflicts
