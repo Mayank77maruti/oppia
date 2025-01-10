@@ -1,0 +1,25 @@
+name: Pull request update
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  autoupdate:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Update ALL THE PRS! 🎉
+        uses: castastrophe/actions-pr-auto-update@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN
+        with:
+          # Optional: Limit the number of PRs to update (default is 100)
+          limit: 10
+          # Optional: Include draft PRs in the update (default is false)
+          include_drafts: true
