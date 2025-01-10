@@ -5,7 +5,7 @@ ENV OPPIA_IS_DOCKERIZED="true"
 
 WORKDIR /
 
-# Installing prerequisite libs and dependencies.
+
 RUN apt-get update -y && apt-get upgrade -y \
     curl \
     git \
