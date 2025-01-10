@@ -1,9 +1,8 @@
 name: autoupdate
 on:
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
+  push:
+    branches:
+      - develop
 
 jobs:
   autoupdate:
@@ -13,10 +12,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Update pull request branch
+      - name: Update pull request branches targeting develop
         uses: castastrophe/actions-pr-auto-update@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ secrets.PAT }}  # Use a PAT for forked repositories
         with:
-          target_branch: ${{ github.event.pull_request.base.ref }}  # Use the PR's target branch
+          target_branch: develop  # Update PRs targeting the `develop` branch
           skip_conflict_prs: true  # Skip PRs with merge conflicts
