@@ -1,0 +1,34 @@
+name: Comment on Opened Pull Requests
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  comment_on_opened_pull_request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add comment to PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { pull_request, repository } = context.payload;
+            const owner = repository.owner.login;
+            const repo = repository.name;
+            const prNumber = pull_request.number;
+
+            const message = "Thank you for opening this PR! A maintainer will review it shortly. 🚀";
+
+            // Add a comment to the PR
+            await github.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: message,
+            });
+
+            console.log(`Commented on PR #${prNumber}: "${message}"`);
