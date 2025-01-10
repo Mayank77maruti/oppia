@@ -1,0 +1,30 @@
+name: Sync PR Branches
+
+on:
+  pull_request:
+    types:
+      - closed
+  push:
+    branches:
+      - develop
+
+jobs:
+  sync-pr-branches:
+    if: >
+      ${{ 
+        github.event.pull_request.merged == true && 
+        contains(join(',', github.event.pull_request.labels.*.name), 'PR: require post-merge sync') 
+      }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+  autoupdate:
+    runs-on: ubuntu-22.04
+    needs: sync-pr-branches
+    steps:
+      - uses: docker://chinthakagodawita/autoupdate-action:v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
