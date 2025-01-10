@@ -1,27 +1,14 @@
-name: Sync PR Branches
-
+name: autoupdate
 on:
-  pull_request_target:
-    types:
-      - closed
   push:
     branches:
       - develop
 
 jobs:
-  sync-pr-branches:
-    if: >
-      ${{ 
-        github.event.pull_request.merged == true && 
-        contains(join(',', github.event.pull_request.labels.*.name), 'PR: require post-merge sync') 
-      }}
+  autoupdate:
+    name: autoupdate
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Run autoupdate
-        uses: docker://chinthakagodawita/autoupdate-action:v1
+      - uses: docker://chinthakagodawita/autoupdate-action:v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use the default GITHUB_TOKEN with base repo permissions
-        with:
-          target_branch: ${{ github.event.pull_request.base.ref }}  # Use the PR target branch
-          skip_conflict_prs: true  # Skip PRs with merge conflicts
+          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
