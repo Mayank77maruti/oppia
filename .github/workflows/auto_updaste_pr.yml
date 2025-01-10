@@ -1,9 +1,12 @@
-name: Auto Update PR Branches
+name: Sync PR Branches
 
 on:
   pull_request:
     types:
       - closed
+  push:
+    branches:
+      - develop
 
 jobs:
   sync-pr-branches:
@@ -12,28 +15,16 @@ jobs:
         github.event.pull_request.merged == true && 
         contains(join(',', github.event.pull_request.labels.*.name), 'PR: require post-merge sync') 
       }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Auto-update PR branches
-        uses: docker://chinthakagodawita/autoupdate-action:v1
+  autoupdate:
+    runs-on: ubuntu-22.04
+    needs: sync-pr-branches
+    steps:
+      - uses: docker://chinthakagodawita/autoupdate-action:v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DRY_RUN: "false"  # Set to "true" if you want to test without making actual updates
-          PR_FILTER: "labelled"
-          PR_LABELS: "PR: require post-merge sync"  # Only apply to PRs with this label
-          MERGE_MSG: "Auto-synced with develop after merge"
-          RETRY_COUNT: "5"  # Number of retry attempts in case of failure
-          RETRY_SLEEP: "300"  # Time (in ms) between retries
-          MERGE_CONFLICT_ACTION: "fail"  # How to handle merge conflicts
-
-      - name: Verify auto-update result
-        run: |
-          if [ "${{ steps.autoupdate.outputs.conflicted }}" == "true" ]; then
-            echo "Merge conflicts detected during auto-update!"
-          else
-            echo "Auto-update successful!"
-          fi
