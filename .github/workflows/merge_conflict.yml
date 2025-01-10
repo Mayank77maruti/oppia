@@ -1,16 +1,52 @@
-name: Check for Merge Conflicts
+name: Auto Label and Notify Conflicts
 
 on:
+  push:
+    branches: [develop]  # Trigger on pushes to the `develop` branch
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    types: [synchronize]  # Trigger when the PR branch is updated
 
 jobs:
-  triage:
+  main:
     runs-on: ubuntu-latest
     steps:
-      - name: Label merge conflicts
-        uses: mschilde/auto-label-merge-conflicts@master
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set environment variables
+        id: set-env
+        run: |
+          echo "AUTHOR=${{ github.event.pull_request.user.login }}" >> $GITHUB_ENV
+          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
+          echo "OWNER=${{ github.event.repository.owner.login }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+
+      - name: Check if PRs have merge conflicts
+        uses: eps1lon/actions-label-merge-conflict@v3
         with:
-          CONFLICT_LABEL_NAME: "PR: don't merge - HAS MERGE CONFLICTS"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS"  # Label to add when conflicts exist
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"  # GitHub token for authentication
+          removeOnDirtyLabel: ""  # Optional: Leave this blank as no label is removed
+          commentOnDirty: |
+            Hi @${{ github.event.pull_request.user.login }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
+            Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
+            Thanks!
+
+  notify-conflicts:
+    runs-on: ubuntu-latest
+    needs: main
+    steps:
+      - name: Find Pull Requests with Merge Conflict Label
+        uses: juliangruber/find-pull-request-action@v1.9.0
+        id: find-conflict-prs
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          labels: "PR: don't merge - HAS MERGE CONFLICTS"  # Label indicating conflicts
+          state: open  # Only open PRs
+
+      - name: Assign PR creators
+        if: steps.find-conflict-prs.outputs.result != ''
+        uses: thomaseizinger/assign-pr-creator-action@v1.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+

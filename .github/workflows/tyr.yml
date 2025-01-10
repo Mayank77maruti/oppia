@@ -1,0 +1,20 @@
+name: Log PR Author on Synchronize
+
+on:
+  pull_request_target:
+    types: [synchronize] # Trigger when the PR branch is updated with new commits
+
+jobs:
+  log-pr-author:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log PR author and commit details
+        run: |
+          echo "PR Author: ${{ github.event.pull_request.user.login }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          echo "PR Title: ${{ github.event.pull_request.title }}"
+          echo "Latest Commit SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "Commit Message: ${{ github.event.commits[-1].message }}"
