@@ -18,13 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-  autoupdate:
-    runs-on: ubuntu-22.04
-    needs: sync-pr-branches
-    steps:
-      - uses: docker://chinthakagodawita/autoupdate-action:v1
+      - name: Run autoupdate
+        uses: docker://chinthakagodawita/autoupdate-action:v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
