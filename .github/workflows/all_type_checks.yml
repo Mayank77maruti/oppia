@@ -1,1 +1,15 @@
 
+name: Type checks
+permissions: read-all
+on:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches:
+      - develop
+      - release-*
+  pull_request:
+
+
+
+

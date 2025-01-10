@@ -1,0 +1,38 @@
+name: Sync PR Branches
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  sync-pr-branches:
+    if: >
+      ${{ 
+        github.event.pull_request.merged == true && 
+        contains(join(',', github.event.pull_request.labels.*.name), 'PR: require post-merge sync') 
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Step 2: Fetch all open PR branches
+      - name: Fetch open PR branches
+        id: fetch-pr-branches
+        run: |
+          PR_BRANCHES=$(gh pr list --state open --json headRefName --jq '.[].headRefName')
+          echo "branches=$PR_BRANCHES" >> $GITHUB_ENV
+
+      # Step 3: Sync each PR branch with develop
+      - name: Sync each branch with develop
+        run: |
+          for branch in ${{ env.branches }}; do
+            echo "Syncing branch: $branch"
+            git fetch origin $branch
+            git checkout $branch
+            git merge origin/develop --no-edit
+            git push origin $branch
+          done
