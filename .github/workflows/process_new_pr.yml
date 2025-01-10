@@ -29,11 +29,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const { Octokit } = require("@octokit/rest");
+            const octokit = new Octokit({ auth: core.getInput("github-token") });
             const author = process.env.AUTHOR;
             const repo = process.env.REPO;
             const owner = process.env.OWNER;
-            const { data } = await octokit.rest.search.issuesAndPullRequests({
-              q: `repo:${owner}/${repo} type:pr state:closed author:${author}`
+            const { data } = await octokit.search.issuesAndPullRequests({
+              q: `repo:${owner}/${repo} type:pr state:closed author:${author}`,
             });
             const prCount = data.items.filter(pr => pr.pull_request?.merged_at).length;
             core.exportVariable('PR_COUNT', prCount);
@@ -44,6 +46,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const { Octokit } = require("@octokit/rest");
+            const octokit = new Octokit({ auth: core.getInput("github-token") });
+
             const prNumber = context.payload.pull_request.number;
             const submitterUsername = process.env.AUTHOR;
             const owner = process.env.OWNER;
@@ -69,7 +74,7 @@ jobs:
             // Assign reviewers as assignees
             if (requestedReviewers.length > 0) {
               try {
-                await octokit.rest.issues.addAssignees({
+                await octokit.issues.addAssignees({
                   owner,
                   repo,
                   issue_number: prNumber,
@@ -84,7 +89,7 @@ jobs:
             // Notify team if no individual reviewers are found
             if (requestedReviewers.length === 0) {
               try {
-                await octokit.rest.issues.createComment({
+                await octokit.issues.createComment({
                   owner,
                   repo,
                   issue_number: prNumber,
@@ -100,7 +105,7 @@ jobs:
             if (submitterIsNewContributor) {
               try {
                 const commentBody = `Hello @${submitterUsername}! Thank you for making a PR. Please ensure your PR is assigned to the correct reviewers -- check the "Assignees" section in the sidebar on the right. Typically, this should match the "Reviewers" section. If it's not correct, you can leave a comment with the syntax \`@reviewer_username PTAL\` to request that a specific reviewer be assigned.\n\n Thanks!`;
-                await octokit.rest.issues.createComment({
+                await octokit.issues.createComment({
                   owner,
                   repo,
                   issue_number: prNumber,
