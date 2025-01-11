@@ -8,6 +8,7 @@ on:
 jobs:
   sync-pr-branches:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -23,19 +24,24 @@ jobs:
       - name: Sync PR Branches
         run: |
           prs="${{ steps.list_prs.outputs.prs }}"
+          # Loop through all open PRs and sync them
           for pr in $(echo "$prs" | jq -r '.[].number'); do
+            # Get the PR branch name
             pr_branch=$(echo "$prs" | jq -r ".[$pr-1].head.ref")
             echo "Syncing PR branch: $pr_branch"
             
-            # Fetch the latest `develop` branch
+            # Fetch the latest develop branch
             git fetch origin develop
-
+            
             # Checkout the PR branch
             git checkout "$pr_branch"
-
-            # Merge the latest `develop` into the PR branch
+            
+            # Merge the latest develop into the PR branch
             git merge origin/develop --no-ff --no-edit
 
             # Push the changes back to the PR branch
             git push origin "$pr_branch"
+            
+            # Optionally: Notify success or failure
+            echo "Successfully synced PR branch $pr_branch with develop."
           done
