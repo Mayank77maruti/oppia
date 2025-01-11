@@ -23,13 +23,15 @@ jobs:
 
       - name: List Open Pull Requests
         id: list-prs
+        env:
+          GH_TOKEN: ${{ github.token }}  # Authenticate using GH_TOKEN
         run: |
           gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
           echo "::set-output name=branches::$(cat pr_branches.txt | tr '\n' ',')"
 
       - name: Sync Each Branch with 'develop'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}  # Authenticate using GH_TOKEN
         run: |
           while IFS= read -r branch; do
             echo "Syncing branch: $branch"
