@@ -1,4 +1,4 @@
-name: Sync Open PR Branches
+name: Sync Open PR Branches with Develop
 
 on:
   push:
@@ -6,30 +6,44 @@ on:
       - develop
 
 jobs:
-  sync-open-pr-branches:
+  sync-pr-branches:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: List Open PRs
-        uses: chrisaddy/list-open-prs@0.1.0
-        id: list-prs
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '14'
 
-      - name: Sync PR Branches
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+          sudo apt-add-repository https://cli.github.com/packages
+          sudo apt update
+          sudo apt install gh
+
+      - name: Authenticate GitHub CLI
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "List of open PR branches:"
-          echo "${{ steps.list-prs.outputs.pr-branches }}"
-          
-          # Read and iterate through each branch
-          echo "${{ steps.list-prs.outputs.pr-branches }}" | jq -r '.[]' | while read branch; do
+          gh auth setup-git
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: List Open PR Branches
+        id: list_prs
+        run: |
+          gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
+          echo "::set-output name=pr_branches::$(cat pr_branches.txt)"
+
+      - name: Sync PR Branches with Develop
+        if: steps.list_prs.outputs.pr_branches != ''
+        run: |
+          while read branch; do
             echo "Syncing branch: $branch"
-            gh workflow run monoku/sync-branches-pr@0.0.1 \
-              -from develop \
-              -to $branch
-          done
+            git fetch origin $branch
+            git checkout $branch
+            git merge origin/develop
+            git push origin $branch
+          done < pr_branches.txt
