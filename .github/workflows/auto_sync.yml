@@ -21,9 +21,33 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
+      - name: Get Merged PR
+        id: merged_pr
+        run: |
+          # Fetch the PR details using GitHub API to get the latest merged PR for the develop branch
+          PR_URL="https://api.github.com/repos/${{ github.repository }}/pulls?state=closed&sort=updated&direction=desc"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$PR_URL")
+          PR_NUMBER=$(echo "$RESPONSE" | jq '.[0].number')  # Get the most recent PR number
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+
+      - name: Check if the PR has the required label
+        id: check_label
+        run: |
+          LABEL_URL="https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/labels"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" "$LABEL_URL")
+          
+          # Check if the critical label is present
+          if echo "$RESPONSE" | grep -q '"name": "PR: require post-merge sync to HEAD"'; then
+            echo "Label found"
+            echo "sync=true" >> $GITHUB_ENV
+          else
+            echo "Label not found"
+            echo "sync=false" >> $GITHUB_ENV
+
       - name: Run Auto Sync Script
+        if: env.sync == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          python .github/actions/auto_sync_pr_critical.yml
+          python .github/actions/auto_sync_pr_critical.py
