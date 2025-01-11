@@ -5,7 +5,6 @@ import time
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO = os.getenv("REPO")
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-MERGE_CONFLICT_LABEL = "PR: don't merge - HAS MERGE CONFLICTS"
 RETRY_COUNT = 3
 RETRY_DELAY = 5  # seconds
 
@@ -41,18 +40,24 @@ def assign_pr_author(pr_number, pr_author):
     else:
         print(f"Failed to assign {pr_author} to PR #{pr_number}. Response: {response.text}")
 
-def add_merge_conflict_label(pr_number):
-    """Add the merge conflict label to the pull request."""
-    label_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/labels"
-    label_payload = {"labels": [MERGE_CONFLICT_LABEL]}
-    response = requests.post(label_url, json=label_payload, headers=HEADERS)
+def notify_pr_author(pr_number, pr_author):
+    """Notify the PR author about the merge conflict."""
+    comment_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/comments"
+    comment_payload = {
+        "body": (
+            f"Hi @{pr_author}, due to recent changes in the `develop` branch, this PR now has a merge conflict. "
+            f"Please resolve the conflict following [this guide](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/). "
+            f"Thank you!"
+        )
+    }
+    response = requests.post(comment_url, json=comment_payload, headers=HEADERS)
     if response.ok:
-        print(f"Added merge conflict label to PR #{pr_number}.")
+        print(f"Successfully notified {pr_author} about the merge conflict in PR #{pr_number}.")
     else:
-        print(f"Failed to add merge conflict label to PR #{pr_number}. Response: {response.text}")
+        print(f"Failed to notify {pr_author} about the merge conflict in PR #{pr_number}. Response: {response.text}")
 
-def check_and_assign(prs):
-    """Check for merge conflicts and assign the PR author if conflicts or dirty state is present."""
+def check_and_notify(prs):
+    """Check for merge conflicts or dirty state, assign the PR author, and notify if conflicts exist."""
     for pr in prs:
         pr_number = pr["number"]
         pr_author = pr["user"]["login"]
@@ -66,7 +71,6 @@ def check_and_assign(prs):
             continue
 
         mergeable_state = pr_details.get("mergeable_state")
-        labels = [label["name"] for label in pr_details.get("labels", [])]
 
         if mergeable_state == "conflict":
             print(f"PR #{pr_number} has conflicts.")
@@ -74,22 +78,19 @@ def check_and_assign(prs):
             # Assign the author to the PR
             assign_pr_author(pr_number, pr_author)
 
-            # Add the merge conflict label if not already present
-            if MERGE_CONFLICT_LABEL not in labels:
-                add_merge_conflict_label(pr_number)
-            else:
-                print(f"PR #{pr_number} already has the merge conflict label.")
+            # Notify the PR author about the conflict
+            notify_pr_author(pr_number, pr_author)
         elif mergeable_state == "dirty":
             print(f"PR #{pr_number} has a dirty state.")
-            
+
             # Assign the author to the PR for a dirty state
             assign_pr_author(pr_number, pr_author)
         else:
-            print(f"PR #{pr_number} does not have conflicts. Mergeable state: {mergeable_state}")
+            print(f"PR #{pr_number} does not have conflicts or dirty state. Mergeable state: {mergeable_state}")
 
 if __name__ == "__main__":
     try:
         prs = list_open_prs()
-        check_and_assign(prs)
+        check_and_notify(prs)
     except Exception as e:
         print(f"An error occurred: {e}")
