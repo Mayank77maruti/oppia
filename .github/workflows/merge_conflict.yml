@@ -7,7 +7,7 @@ on:
 
 jobs:
   list-prs:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     outputs:
       pr-list: ${{ steps.set-pr-list.outputs.pr-list }}
     steps:
@@ -36,36 +36,30 @@ jobs:
           echo "::set-output name=pr-list::${{ needs.list-prs.outputs.pr-list }}"
 
       - name: Check for Conflicts
-        uses: actions/github-script@v6
         id: check-conflicts
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const prList = JSON.parse('${{ steps.get-pr-list.outputs.pr-list }}');
+        run: |
+          PR_LIST='${{ steps.get-pr-list.outputs.pr-list }}'
+          CONFLICTING_PRS=()
 
-            async function checkConflicts(prs) {
-              let conflictingPRs = [];
-              for (const pr of prs) {
-                const prDetails = await github.rest.pulls.get({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pr.number,
-                });
-                if (prDetails.data.mergeable_state === 'conflict') {
-                  conflictingPRs.push(prDetails.data);
-                }
-              }
-              return conflictingPRs;
-            }
+          for pr in $(echo "$PR_LIST" | jq -r '.[] | @base64'); do
+            PR=$(echo "$pr" | base64 --decode)
+            PR_NUMBER=$(echo "$PR" | jq -r '.number')
+            PR_DETAILS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+            MERGEABLE_STATE=$(echo "$PR_DETAILS" | jq -r '.mergeable_state')
 
-            checkConflicts(prList).then(conflictingPRs => {
-              core.setOutput('conflicting-prs', JSON.stringify(conflictingPRs));
-            }).catch(console.error);
+            if [ "$MERGEABLE_STATE" = "conflict" ]; then
+              CONFLICTING_PRS+=("$PR_DETAILS")
+            fi
+          done
+
+          echo "Conflicting PRs: ${CONFLICTING_PRS[@]}"
+          echo "::set-output name=conflicting-prs::$(echo ${CONFLICTING_PRS[@]} | jq -s '.')"
 
       - name: Set Conflicting PRs Output
         id: set-conflicting-prs
         run: |
-          echo "::set-output name=conflicting-prs::$(echo ${{ steps.check-conflicts.outputs.result }})"
+          echo "::set-output name=conflicting-prs::${{ steps.check-conflicts.outputs.conflicting-prs }}"
 
   assign-author:
     runs-on: ubuntu-latest
@@ -78,22 +72,18 @@ jobs:
           echo "::set-output name=conflicting-prs::${{ needs.check-conflicts.outputs.conflicting-prs }}"
 
       - name: Assign Author to PR
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const conflictingPRs = JSON.parse('${{ steps.get-conflicting-prs.outputs.conflicting-prs }}');
+        id: assign-author
+        run: |
+          CONFLICTING_PRS='${{ steps.get-conflicting-prs.outputs.conflicting-prs }}'
 
-            async function assignAuthor(prs) {
-              for (const pr of prs) {
-                console.log(`PR #${pr.number} has conflicts. Assigning to ${pr.user.login}.`);
-                await github.rest.issues.addAssignees({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr.number,
-                  assignees: [pr.user.login],
-                });
-              }
-            }
+          for pr in $(echo "$CONFLICTING_PRS" | jq -r '.[] | @base64'); do
+            PR=$(echo "$pr" | base64 --decode)
+            PR_NUMBER=$(echo "$PR" | jq -r '.number')
+            PR_AUTHOR=$(echo "$PR" | jq -r '.user.login')
 
-            assignAuthor(conflictingPRs).catch(console.error);
+            echo "PR #$PR_NUMBER has conflicts. Assigning to $PR_AUTHOR."
+            curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/assignees" \
+              -d '{"assignees":["'"$PR_AUTHOR"'"]}'
+          done
