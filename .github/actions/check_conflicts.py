@@ -40,24 +40,28 @@ def assign_pr_author(pr_number, pr_author):
     else:
         print(f"Failed to assign {pr_author} to PR #{pr_number}. Response: {response.text}")
 
-def notify_pr_author(pr_number, pr_author):
-    """Notify the PR author about the merge conflict."""
+def notify_pr_author(pr_number, pr_author, state):
+    """Notify the PR author about the merge conflict or dirty state."""
     comment_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/comments"
-    comment_payload = {
-        "body": (
-            f"Hi @{pr_author}, due to recent changes in the `develop` branch, this PR now has a merge conflict. "
+    if state == "dirty":
+        message = (
+            f"Hi @{pr_author}, due to recent changes in the `develop` branch, this PR now has a **merge conflict**. "
             f"Please resolve the conflict following [this guide](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/). "
             f"Thank you!"
         )
-    }
+    else:
+        print(f"Invalid state '{state}' passed to notify_pr_author.")
+        return
+
+    comment_payload = {"body": message}
     response = requests.post(comment_url, json=comment_payload, headers=HEADERS)
     if response.ok:
-        print(f"Successfully notified {pr_author} about the merge conflict in PR #{pr_number}.")
+        print(f"Successfully notified {pr_author} about the {state} state in PR #{pr_number}.")
     else:
-        print(f"Failed to notify {pr_author} about the merge conflict in PR #{pr_number}. Response: {response.text}")
+        print(f"Failed to notify {pr_author} about the {state} state in PR #{pr_number}. Response: {response.text}")
 
 def check_and_notify(prs):
-    """Check for merge conflicts or dirty state, assign the PR author, and notify if conflicts exist."""
+    """Check for merge conflicts or dirty state, assign the PR author, and notify if needed."""
     for pr in prs:
         pr_number = pr["number"]
         pr_author = pr["user"]["login"]
@@ -79,12 +83,15 @@ def check_and_notify(prs):
             assign_pr_author(pr_number, pr_author)
 
             # Notify the PR author about the conflict
-            notify_pr_author(pr_number, pr_author)
+            notify_pr_author(pr_number, pr_author, "conflict")
         elif mergeable_state == "dirty":
             print(f"PR #{pr_number} has a dirty state.")
 
-            # Assign the author to the PR for a dirty state
+            # Assign the author to the PR
             assign_pr_author(pr_number, pr_author)
+
+            # Notify the PR author about the dirty state
+            notify_pr_author(pr_number, pr_author, "dirty")
         else:
             print(f"PR #{pr_number} does not have conflicts or dirty state. Mergeable state: {mergeable_state}")
 
