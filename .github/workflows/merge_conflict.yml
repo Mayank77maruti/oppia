@@ -56,6 +56,10 @@ jobs:
           echo "Conflicting PRs: ${CONFLICTING_PRS[@]}"
           echo "::set-output name=conflicting-prs::$(echo ${CONFLICTING_PRS[@]} | jq -s '.')"
 
+      - name: Debug Conflicting PRs
+        run: |
+          echo "Conflicting PRs Output: ${{ steps.check-conflicts.outputs.conflicting-prs }}"
+
       - name: Set Conflicting PRs Output
         id: set-conflicting-prs
         run: |
@@ -66,6 +70,11 @@ jobs:
     needs: check-conflicts
     if: ${{ fromJson(needs.check-conflicts.outputs.conflicting-prs).length > 0 }}
     steps:
+      - name: Debug Conflicting PRs
+        run: |
+          echo "Conflicting PRs: ${{ needs.check-conflicts.outputs.conflicting-prs }}"
+          echo "Number of Conflicting PRs: ${{ fromJson(needs.check-conflicts.outputs.conflicting-prs).length }}"
+
       - name: Get Conflicting PRs
         id: get-conflicting-prs
         run: |
