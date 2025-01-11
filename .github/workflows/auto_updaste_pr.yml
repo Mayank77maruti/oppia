@@ -1,4 +1,4 @@
-name: Sync Open PR Branches with Develop
+name: Sync Open PR Branches
 
 on:
   push:
@@ -15,35 +15,53 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '14'
+          node-version: '16'
 
-      - name: Install GitHub CLI
+      - name: Install Octokit
+        run: npm install @octokit/rest
+
+      - name: Sync PR Branches
         run: |
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-          sudo apt-add-repository https://cli.github.com/packages
-          sudo apt update
-          sudo apt install gh
+          const { Octokit } = require('@octokit/rest');
+          const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
-      - name: Authenticate GitHub CLI
+          async function syncPRBranches() {
+            try {
+              // Fetch open PRs
+              const { data: prs } = await octokit.pulls.list({
+                owner: 'Fgrdxgu',
+                repo: 'oppia',
+                state: 'open',
+              });
+
+              for (const pr of prs) {
+                const prBranch = pr.head.ref;
+                console.log(`Syncing PR branch: ${prBranch}`);
+
+                // Fetch the latest develop branch
+                await octokit.git.updateRef({
+                  owner: 'Fgrdxgu',
+                  repo: 'oppia',
+                  ref: `heads/${prBranch}`,
+                  sha: pr.base.sha,
+                });
+
+                // Merge develop into the PR branch
+                await octokit.pulls.merge({
+                  owner: 'Fgrdxgu',
+                  repo: 'oppia',
+                  pull_number: pr.number,
+                  commit_title: 'Sync with develop',
+                  commit_message: 'Merged the latest changes from develop into this PR branch.',
+                  merge_method: 'merge',
+                });
+              }
+            } catch (error) {
+              console.error('Error syncing PR branches:', error);
+              process.exit(1);
+            }
+          }
+
+          syncPRBranches();
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh auth setup-git
-          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
-
-      - name: List Open PR Branches
-        id: list_prs
-        run: |
-          gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
-          echo "::set-output name=pr_branches::$(cat pr_branches.txt)"
-
-      - name: Sync PR Branches with Develop
-        if: steps.list_prs.outputs.pr_branches != ''
-        run: |
-          while read branch; do
-            echo "Syncing branch: $branch"
-            git fetch origin $branch
-            git checkout $branch
-            git merge origin/develop
-            git push origin $branch
-          done < pr_branches.txt
