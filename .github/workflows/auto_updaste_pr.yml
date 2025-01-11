@@ -12,56 +12,30 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-
-      - name: Install Octokit
-        run: npm install @octokit/rest
+      - name: List Open PRs
+        id: list_prs
+        run: |
+          PRS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Fgrdxgu/oppia/pulls?state=open")
+          echo "Open PRs: $PRS"
+          echo "::set-output name=prs::$PRS"
 
       - name: Sync PR Branches
         run: |
-          const { Octokit } = require('@octokit/rest');
-          const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+          prs="${{ steps.list_prs.outputs.prs }}"
+          for pr in $(echo "$prs" | jq -r '.[].number'); do
+            pr_branch=$(echo "$prs" | jq -r ".[$pr-1].head.ref")
+            echo "Syncing PR branch: $pr_branch"
+            
+            # Fetch the latest `develop` branch
+            git fetch origin develop
 
-          async function syncPRBranches() {
-            try {
-              // Fetch open PRs
-              const { data: prs } = await octokit.pulls.list({
-                owner: 'Fgrdxgu',
-                repo: 'oppia',
-                state: 'open',
-              });
+            # Checkout the PR branch
+            git checkout "$pr_branch"
 
-              for (const pr of prs) {
-                const prBranch = pr.head.ref;
-                console.log(`Syncing PR branch: ${prBranch}`);
+            # Merge the latest `develop` into the PR branch
+            git merge origin/develop --no-ff --no-edit
 
-                // Fetch the latest develop branch
-                await octokit.git.updateRef({
-                  owner: 'Fgrdxgu',
-                  repo: 'oppia',
-                  ref: `heads/${prBranch}`,
-                  sha: pr.base.sha,
-                });
-
-                // Merge develop into the PR branch
-                await octokit.pulls.merge({
-                  owner: 'Fgrdxgu',
-                  repo: 'oppia',
-                  pull_number: pr.number,
-                  commit_title: 'Sync with develop',
-                  commit_message: 'Merged the latest changes from develop into this PR branch.',
-                  merge_method: 'merge',
-                });
-              }
-            } catch (error) {
-              console.error('Error syncing PR branches:', error);
-              process.exit(1);
-            }
-          }
-
-          syncPRBranches();
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            # Push the changes back to the PR branch
+            git push origin "$pr_branch"
+          done
