@@ -14,9 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Python configuration for recording the action corresponding to a learner
-submitting an answer.
-"""
+
 
 from __future__ import annotations
 
