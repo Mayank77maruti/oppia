@@ -1,52 +1,68 @@
-name: Auto Label and Notify Conflicts
+name: Handle PR Conflicts
 
 on:
   push:
-    branches: [develop]  # Trigger on pushes to the `develop` branch
-  pull_request_target:
-    types: [synchronize]  # Trigger when the PR branch is updated
+    branches:
+      - develop
 
 jobs:
-  main:
+  list_open_prs:
+    name: List Open PRs and Check for Conflicts
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set environment variables
-        id: set-env
+      - name: Fetch Open Pull Requests
+        id: fetch_prs
         run: |
-          echo "AUTHOR=${{ github.event.pull_request.user.login }}" >> $GITHUB_ENV
-          echo "REPO=${{ github.event.repository.name }}" >> $GITHUB_ENV
-          echo "OWNER=${{ github.event.repository.owner.login }}" >> $GITHUB_ENV
-          echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          PRS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/Fgrdxgu/oppia/pulls?state=open")
+          echo "Open PRs: $PRS"
+          echo "::set-output name=prs::$PRS"
 
-      - name: Check if PRs have merge conflicts
-        uses: eps1lon/actions-label-merge-conflict@v3
-        with:
-          dirtyLabel: "PR: don't merge - HAS MERGE CONFLICTS"  # Label to add when conflicts exist
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"  # GitHub token for authentication
-          removeOnDirtyLabel: ""  # Optional: Leave this blank as no label is removed
-          commentOnDirty: |
-            Hi @${{ github.event.pull_request.user.login }}. Due to recent changes in the "develop" branch, this PR now has a merge conflict.
-            Please follow [this link](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts/resolving-a-merge-conflict-using-the-command-line) if you need help resolving the conflict, so that the PR can be merged.
-            Thanks!
+      - name: Check Merge Conflicts
+        id: check_conflicts
+        run: |
+          PRS=${{ steps.fetch_prs.outputs.prs }}
+          echo "${PRS}" | jq -c '.[]' | while read pr; do
+            PR_NUMBER=$(echo "$pr" | jq -r '.number')
+            PR_AUTHOR=$(echo "$pr" | jq -r '.user.login')
+            CONFLICTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/Fgrdxgu/oppia/pulls/$PR_NUMBER/merge" \
+              | jq -r '.message')
 
-  notify-conflicts:
+            if [ "$CONFLICTS" == "Merge conflict" ]; then
+              echo "PR #$PR_NUMBER has conflicts. Assigning to $PR_AUTHOR."
+              echo "conflicting_prs::$PR_NUMBER,$PR_AUTHOR" >> conflicts_list.txt
+            else
+              echo "PR #$PR_NUMBER has no conflicts."
+            fi
+          done
+          
+      - name: Output Conflict PRs
+        id: output_conflicts
+        run: |
+          if [ -f conflicts_list.txt ]; then
+            cat conflicts_list.txt
+          else
+            echo "No PRs with conflicts."
+          fi
+
+  assign_author:
+    name: Assign Author to PRs with Conflicts
     runs-on: ubuntu-latest
-    needs: main
+    needs: list_open_prs
     steps:
-      - name: Find Pull Requests with Merge Conflict Label
-        uses: juliangruber/find-pull-request-action@v1.9.0
-        id: find-conflict-prs
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          labels: "PR: don't merge - HAS MERGE CONFLICTS"  # Label indicating conflicts
-          state: open  # Only open PRs
+      - name: Read Conflicting PRs
+        id: read_conflicts
+        run: |
+          if [ -f conflicts_list.txt ]; then
+            cat conflicts_list.txt
+          else
+            echo "No conflicting PRs found." && exit 0
+          fi
 
-      - name: Assign PR creators
-        if: steps.find-conflict-prs.outputs.result != ''
-        uses: thomaseizinger/assign-pr-creator-action@v1.0.0
+      - name: Assign Author to PRs
+        if: always()
+        uses: technote-space/assign-author@v1.6.2
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
+          pr_numbers: ${{ steps.read_conflicts.outputs.conflicting_prs }}
+          token: ${{ secrets.GITHUB_TOKEN }}
