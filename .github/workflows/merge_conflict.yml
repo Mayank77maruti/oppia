@@ -27,61 +27,36 @@ jobs:
   check-conflicts:
     runs-on: ubuntu-latest
     needs: list-prs
-    outputs:
-      conflicting-prs: ${{ steps.set-conflicting-prs.outputs.conflicting-prs }}
     steps:
       - name: Get PR List
         id: get-pr-list
         run: |
           echo "pr-list=${{ needs.list-prs.outputs.pr-list }}" >> $GITHUB_OUTPUT
 
-      - name: Check for Conflicts
+      - name: Check for Conflicts and Assign Author
         id: check-conflicts
         run: |
           PR_LIST='${{ steps.get-pr-list.outputs.pr-list }}'
-          CONFLICTING_PRS=()
 
           for pr in $(echo "$PR_LIST" | jq -r '.[] | @base64'); do
             PR=$(echo "$pr" | base64 --decode)
             PR_NUMBER=$(echo "$PR" | jq -r '.number')
+            PR_AUTHOR=$(echo "$PR" | jq -r '.user.login')
+
+            # Check if PR has conflicts
             PR_DETAILS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
             MERGEABLE_STATE=$(echo "$PR_DETAILS" | jq -r '.mergeable_state')
 
             if [ "$MERGEABLE_STATE" = "conflict" ]; then
-              CONFLICTING_PRS+=("$PR_DETAILS")
+              echo "PR #$PR_NUMBER has conflicts. Assigning to $PR_AUTHOR."
+
+              # Assign author to PR
+              curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/assignees" \
+                -d '{"assignees":["'"$PR_AUTHOR"'"]}'
+            else
+              echo "PR #$PR_NUMBER does not have conflicts."
             fi
           done
-
-          echo "Conflicting PRs: ${CONFLICTING_PRS[@]}"
-          echo "conflicting-prs=$(echo ${CONFLICTING_PRS[@]} | jq -s '.')" >> $GITHUB_OUTPUT
-
-      - name: Debug Conflicting PRs
-        run: |
-          echo "Conflicting PRs Output: ${{ steps.check-conflicts.outputs.conflicting-prs }}"
-
-      - name: Set Conflicting PRs Output
-        id: set-conflicting-prs
-        run: |
-          echo "conflicting-prs=${{ steps.check-conflicts.outputs.conflicting-prs }}" >> $GITHUB_OUTPUT
-
-  assign-author:
-    runs-on: ubuntu-latest
-    needs: check-conflicts
-    if: ${{ fromJson(needs.check-conflicts.outputs.conflicting-prs).length > 0 }}
-    steps:
-      - name: Debug Conflicting PRs
-        run: |
-          echo "Conflicting PRs: ${{ needs.check-conflicts.outputs.conflicting-prs }}"
-          echo "Number of Conflicting PRs: ${{ fromJson(needs.check-conflicts.outputs.conflicting-prs).length }}"
-
-      - name: Get Conflicting PRs
-        id: get-conflicting-prs
-        run: |
-          echo "conflicting-prs=${{ needs.check-conflicts.outputs.conflicting-prs }}" >> $GITHUB_OUTPUT
-
-      - name: Assign Author to PR
-        uses: technote-space/assign-author@v1.6.2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          pr: ${{ fromJson(steps.get-conflicting-prs.outputs.conflicting-prs)[0].number }}
