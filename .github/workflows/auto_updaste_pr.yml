@@ -21,12 +21,6 @@ jobs:
             sudo apt-get install -y gh
           fi
 
-      - name: Authenticate GitHub CLI
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh auth login --with-token <<< "$GITHUB_TOKEN"
-
       - name: List Open Pull Requests
         id: list-prs
         run: |
