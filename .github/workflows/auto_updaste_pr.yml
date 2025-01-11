@@ -1,0 +1,48 @@
+name: Sync Open PR Branches
+
+on:
+  # Trigger workflow when there's a push to the develop branch
+  push:
+    branches:
+      - develop
+
+jobs:
+  sync-pr-branches:
+    runs-on: ubuntu-latest
+    name: Sync Open PR Branches with 'develop'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set Up Node.js Environment
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get install -y gh
+
+      - name: List Open Pull Requests
+        id: list-prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
+
+      - name: Sync Each Branch with 'develop'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while read branch; do
+            echo "Syncing branch: $branch"
+
+            # Use the tretuna/sync-branches action
+            gh workflow run --ref "$branch" --json \
+            uses: tretuna/sync-branches@1.4.0 \
+            with:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              FROM_BRANCH: develop
+              TO_BRANCH: $branch
+
+          done < pr_branches.txt
