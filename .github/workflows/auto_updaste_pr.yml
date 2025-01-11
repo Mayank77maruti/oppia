@@ -1,0 +1,43 @@
+name: Sync Open PR Branches
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  sync-pr-branches:
+    runs-on: ubuntu-latest
+    name: Sync Open PR Branches with 'develop'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI
+        run: |
+          # Install GitHub CLI if not already installed
+          if ! command -v gh &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y gh
+          fi
+
+      - name: Authenticate GitHub CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth login --with-token <<< "$GITHUB_TOKEN"
+
+      - name: List Open Pull Requests
+        id: list-prs
+        run: |
+          gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
+          echo "::set-output name=branches::$(cat pr_branches.txt | tr '\n' ',')"
+
+      - name: Sync Each Branch with 'develop'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while IFS= read -r branch; do
+            echo "Syncing branch: $branch"
+            gh workflow run sync-branches.yml --ref "$branch" --field FROM_BRANCH=develop --field TO_BRANCH="$branch"
+          done < pr_branches.txt
