@@ -1,0 +1,35 @@
+name: PR Permission Review
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+  issue_comment:
+    types:
+      - created
+
+jobs:
+  review-permissions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for permission changes
+        if: github.event_name == 'pull_request'
+        run: |
+          permissions=$(cat ${{ github.workspace }}/.github/workflows/*.yml | grep permissions)
+          if [[ -n "$permissions" ]]; then
+            echo "Permissions found: $permissions"
+            gh pr comment ${{ github.number }} -b "Permissions request detected in this workflow PR. Please review and approve the required permissions."
+            exit 1  # Halt workflow
+          fi
+      
+      - name: Await specific approval from maintainers
+        if: github.event_name == 'issue_comment'
+        run: |
+          # Check if the comment matches "Permissions Granted"
+          if [[ $(github.context.payload.comment.body) == "Permissions Granted" ]]; then
+            echo "Permissions Granted comment detected"
+            exit 0  # Continue workflow
+          fi
+          echo "Permissions not granted"
+          exit 1  # Halt workflow added

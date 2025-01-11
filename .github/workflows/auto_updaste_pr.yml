@@ -1,0 +1,42 @@
+name: Sync Open PR Branches
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  sync-pr-branches:
+    runs-on: ubuntu-latest
+    name: Sync Open PR Branches with 'develop'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get install -y gh
+
+      - name: List Open Pull Requests
+        id: list-prs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr list --state open --json headRefName --jq '.[].headRefName' > pr_branches.txt
+
+      - name: Sync Each Branch with 'develop'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          while read branch; do
+            echo "Syncing branch: $branch"
+
+            # Use the tretuna/sync-branches action
+            gh pr checkout "$branch"
+            git fetch origin develop
+            git merge origin/develop --no-edit
+
+            # Push the updated branch back to the remote
+            git push origin "$branch"
+
+          done < pr_branches.txt
