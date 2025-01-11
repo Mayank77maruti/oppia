@@ -1,4 +1,4 @@
-name: Assign Author on Conflict
+name: Auto Sync Branch with Develop
 
 on:
   push:
@@ -6,8 +6,9 @@ on:
       - develop
 
 jobs:
-  check-and-assign:
+  auto-sync:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -20,9 +21,9 @@ jobs:
       - name: Install Dependencies
         run: pip install requests
 
-      - name: Run Conflict Checker
+      - name: Run Auto Sync Script
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          python .github/actions/check_conflicts.py
+          python .github/actions/auto_sync_pr_critical.yml
