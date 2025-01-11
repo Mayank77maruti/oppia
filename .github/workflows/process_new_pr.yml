@@ -83,6 +83,7 @@ jobs:
             const prNumber = process.env.PR_NUMBER;
             const owner = process.env.OWNER;
             const repo = process.env.REPO;
+            const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login); 
             const requestedTeams = context.payload.pull_request.requested_teams.map(t => t.slug);
             if (requestedReviewers.length === 0 && requestedTeams.length === 0) {
               try {
