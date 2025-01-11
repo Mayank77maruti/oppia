@@ -1,57 +1,110 @@
-name: Assign Author on Conflict
+name: Merge Conflict Checker
 
 on:
   push:
     branches:
       - develop
+  pull_request:
+    types: [opened, synchronize]
 
 jobs:
-  list-prs:
+  check-merge-conflicts:
     runs-on: ubuntu-latest
-    outputs:
-      pr-list: ${{ steps.list_prs.outputs.prs }}
     steps:
-      - name: List Open PRs
-        id: list_prs
-        run: |
-          PRS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls?state=open" | jq -c '.')
-          echo "prs=$PRS" >> $GITHUB_OUTPUT
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-  check-conflicts:
-    runs-on: ubuntu-latest
-    needs: list-prs
-    steps:
-      - name: Get PR List
-        id: get-pr-list
-        run: |
-          PR_LIST='${{ needs.list-prs.outputs.pr-list }}'
-          echo "PR_LIST=$PR_LIST" >> $GITHUB_OUTPUT
+      - name: Check for Merge Conflicts
+        uses: actions/github-script@v6
+        id: check-conflicts
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { context, github } = require('@actions/github');
+            const mergeConflictLabel = "PR: don't merge - HAS MERGE CONFLICTS";
 
-      - name: Check for Conflicts and Assign Author
-        run: |
-          PR_LIST='${{ steps.get-pr-list.outputs.PR_LIST }}'
-          echo "PR_LIST: $PR_LIST"
+            async function checkMergeConflicts() {
+              // Get the PR number from the context.
+              const prNumber = context.payload.pull_request?.number;
 
-          for pr in $(echo "$PR_LIST" | jq -r '.[] | @base64'); do
-            PR=$(echo "$pr" | base64 --decode)
-            PR_NUMBER=$(echo "$PR" | jq -r '.number')
-            PR_AUTHOR=$(echo "$PR" | jq -r '.user.login')
-            
-            # Check if PR has conflicts
-            PR_DETAILS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER")
-            MERGEABLE_STATE=$(echo "$PR_DETAILS" | jq -r '.mergeable_state')
-            
-            if [ "$MERGEABLE_STATE" = "conflict" ]; then
-              echo "PR #$PR_NUMBER has conflicts. Assigning to $PR_AUTHOR."
-              
-              # Assign author to PR
-              curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/assignees" \
-                -d "{\"assignees\":[\"$PR_AUTHOR\"]}"
-            else
-              echo "PR #$PR_NUMBER does not have conflicts."
-            fi
-          done
+              if (!prNumber) {
+                console.log('No PR number found. Skipping.');
+                return;
+              }
+
+              // Get the PR details.
+              const { data: pullRequest } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+
+              console.log(`Checking PR #${prNumber} for merge conflicts...`);
+
+              // Poll until mergeable status is determined.
+              while (pullRequest.mergeable === null) {
+                console.log('Mergeable status is null. Polling again...');
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds.
+                const { data: updatedPR } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                });
+                pullRequest.mergeable = updatedPR.mergeable;
+              }
+
+              console.log(`Mergeable status: ${pullRequest.mergeable}`);
+
+              // Check if the PR has the merge conflict label.
+              const hasMergeConflictLabel = pullRequest.labels.some(
+                label => label.name === mergeConflictLabel
+              );
+
+              if (!pullRequest.mergeable && !hasMergeConflictLabel) {
+                // Add the merge conflict label.
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  labels: [mergeConflictLabel],
+                });
+
+                // Add a comment to the PR.
+                const commentBody =
+                  `Hi @${pullRequest.user.login}. Due to recent changes in the "develop" branch, ` +
+                  'this PR now has a merge conflict. Please follow [this link](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/) ' +
+                  'if you need help resolving the conflict, so that the PR can be merged. Thanks!';
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: commentBody,
+                });
+
+                // Assign the PR author.
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  assignees: [pullRequest.user.login],
+                });
+
+                console.log(`Added label, comment, and assigned author to PR #${prNumber}.`);
+              } else if (pullRequest.mergeable && hasMergeConflictLabel) {
+                // Remove the merge conflict label.
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: mergeConflictLabel,
+                });
+
+                console.log(`Removed merge conflict label from PR #${prNumber}.`);
+              }
+            }
+
+            checkMergeConflicts().catch(error => {
+              console.error('Error checking merge conflicts:', error);
+              process.exit(1);
+            });
