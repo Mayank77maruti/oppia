@@ -1,21 +1,31 @@
-name: autoupdate
+name: Sync Open PR Branches
+
 on:
   push:
     branches:
       - develop
 
 jobs:
-  autoupdate:
-    name: autoupdate
-    runs-on: ubuntu-22.04
+  sync-pr-branches:
+    runs-on: ubuntu-latest
+    name: Sync Open PR Branches with 'develop'
+    strategy:
+      matrix:
+        branch: ${{ steps.list-prs.outputs.branches }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Update pull request branches targeting develop
-        uses: castastrophe/actions-pr-auto-update@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT }}  # Use a PAT for forked repositories
+      - name: List Open Pull Requests
+        id: list-prs
+        run: |
+          echo "branches=$(gh pr list --state open --json headRefName --jq '.[].headRefName' | tr '\n' ',')"
+          echo "::set-output name=branches::${branches}"
+
+      - name: Sync Branch with 'develop'
+        uses: tretuna/sync-branches@1.4.0
         with:
-          target_branch: develop  # Update PRs targeting the `develop` branch
-          skip_conflict_prs: true  # Skip PRs with merge conflicts
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FROM_BRANCH: develop
+          TO_BRANCH: ${{ matrix.branch }}
