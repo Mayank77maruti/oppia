@@ -1,0 +1,73 @@
+name: Auto-Sync Open PRs
+
+on:
+  push:
+    branches:
+      - develop  # Trigger when commits are pushed to `develop`
+
+jobs:
+  sync-open-prs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to update branches
+      pull-requests: read  # Required to list open PRs
+
+    steps:
+      # Step 1: Fetch details of the merged PR to check for the label
+      - name: Get Merged PR Details
+        id: merged-pr
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: commit } = await github.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: context.sha,
+            });
+            const pullRequest = commit.commit.message.match(/Merge pull request #(\d+)/);
+            if (pullRequest) {
+              const prNumber = pullRequest[1];
+              const { data: pr } = await github.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
+              core.setOutput('labelFound', pr.labels.some(label => label.name === 'PR: require post-merge sync to HEAD'));
+            } else {
+              core.setOutput('labelFound', false);
+            }
+
+      # Step 2: Exit if the merged PR doesn't have the required label
+      - name: Check Label
+        if: steps.merged-pr.outputs.labelFound == 'false'
+        run: echo "No label 'PR: require post-merge sync to HEAD' found on merged PR. Skipping sync."
+
+      # Step 3: Fetch all open PRs if the label is found
+      - name: Get Open PRs
+        id: open-prs
+        if: steps.merged-pr.outputs.labelFound == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pullRequests } = await github.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            });
+            core.setOutput('prs', JSON.stringify(pullRequests));
+
+      # Step 4: Sync branches for all open PRs
+      - name: Sync PR Branches
+        if: steps.merged-pr.outputs.labelFound == 'true'
+        run: |
+          PR_BRANCHES="${{ steps.open-prs.outputs.prs }}"
+          echo "${PR_BRANCHES}" | jq -c '.[] | .head.ref' | while read branch; do
+            branch=$(echo $branch | tr -d '"')
+            echo "Syncing branch: $branch"
+            git fetch origin develop
+            git checkout $branch
+            git merge origin/develop --no-edit
+            git push origin $branch
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
