@@ -1,10 +1,13 @@
 import os
 import requests
+import time
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 REPO = os.getenv("REPO")
 HEADERS = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 MERGE_CONFLICT_LABEL = "PR: don't merge - HAS MERGE CONFLICTS"
+RETRY_COUNT = 3
+RETRY_DELAY = 5  # seconds
 
 def list_open_prs():
     """Fetch the list of open pull requests."""
@@ -12,6 +15,21 @@ def list_open_prs():
     response = requests.get(url, headers=HEADERS)
     response.raise_for_status()
     return response.json()
+
+def fetch_pr_details(pr_number):
+    """Fetch the details of a specific PR."""
+    pr_details_url = f"https://api.github.com/repos/{REPO}/pulls/{pr_number}"
+    for attempt in range(RETRY_COUNT):
+        response = requests.get(pr_details_url, headers=HEADERS)
+        response.raise_for_status()
+        pr_details = response.json()
+        mergeable_state = pr_details.get("mergeable_state")
+        if mergeable_state and mergeable_state != "unknown":
+            return pr_details
+        print(f"Retry {attempt + 1}/{RETRY_COUNT}: Mergeable state is 'unknown' for PR #{pr_number}. Retrying...")
+        time.sleep(RETRY_DELAY)
+    print(f"Mergeable state could not be determined for PR #{pr_number} after retries.")
+    return None
 
 def assign_pr_author(pr_number, pr_author):
     """Assign the PR author to the pull request."""
@@ -39,13 +57,16 @@ def check_and_assign(prs):
         pr_number = pr["number"]
         pr_author = pr["user"]["login"]
 
-        # Fetch PR details
-        pr_details_url = f"https://api.github.com/repos/{REPO}/pulls/{pr_number}"
-        pr_details = requests.get(pr_details_url, headers=HEADERS).json()
+        print(f"Checking PR #{pr_number} by {pr_author}.")
+
+        # Fetch PR details with retries
+        pr_details = fetch_pr_details(pr_number)
+        if not pr_details:
+            print(f"Skipping PR #{pr_number} due to undetermined mergeable state.")
+            continue
+
         mergeable_state = pr_details.get("mergeable_state")
         labels = [label["name"] for label in pr_details.get("labels", [])]
-
-        print(f"Checking PR #{pr_number} by {pr_author}. Mergeable state: {mergeable_state}")
 
         if mergeable_state == "conflict":
             print(f"PR #{pr_number} has conflicts.")
@@ -59,7 +80,7 @@ def check_and_assign(prs):
             else:
                 print(f"PR #{pr_number} already has the merge conflict label.")
         else:
-            print(f"PR #{pr_number} does not have conflicts.")
+            print(f"PR #{pr_number} does not have conflicts. Mergeable state: {mergeable_state}")
 
 if __name__ == "__main__":
     try:
