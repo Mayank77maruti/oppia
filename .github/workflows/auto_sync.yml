@@ -26,4 +26,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          python .github/actions/auto_sync_pr_critical.py
+          python .github/actions/auto_sync_pr_critical.yml
