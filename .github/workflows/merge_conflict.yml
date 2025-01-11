@@ -72,18 +72,7 @@ jobs:
           echo "::set-output name=conflicting-prs::${{ needs.check-conflicts.outputs.conflicting-prs }}"
 
       - name: Assign Author to PR
-        id: assign-author
-        run: |
-          CONFLICTING_PRS='${{ steps.get-conflicting-prs.outputs.conflicting-prs }}'
-
-          for pr in $(echo "$CONFLICTING_PRS" | jq -r '.[] | @base64'); do
-            PR=$(echo "$pr" | base64 --decode)
-            PR_NUMBER=$(echo "$PR" | jq -r '.number')
-            PR_AUTHOR=$(echo "$PR" | jq -r '.user.login')
-
-            echo "PR #$PR_NUMBER has conflicts. Assigning to $PR_AUTHOR."
-            curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/assignees" \
-              -d '{"assignees":["'"$PR_AUTHOR"'"]}'
-          done
+        uses: technote-space/assign-author@v1.6.2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr: ${{ fromJson(steps.get-conflicting-prs.outputs.conflicting-prs)[0].number }}
