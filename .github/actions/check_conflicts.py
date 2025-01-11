@@ -52,7 +52,7 @@ def add_merge_conflict_label(pr_number):
         print(f"Failed to add merge conflict label to PR #{pr_number}. Response: {response.text}")
 
 def check_and_assign(prs):
-    """Check for merge conflicts and assign the PR author if conflicts are present."""
+    """Check for merge conflicts and assign the PR author if conflicts or dirty state is present."""
     for pr in prs:
         pr_number = pr["number"]
         pr_author = pr["user"]["login"]
@@ -79,6 +79,11 @@ def check_and_assign(prs):
                 add_merge_conflict_label(pr_number)
             else:
                 print(f"PR #{pr_number} already has the merge conflict label.")
+        elif mergeable_state == "dirty":
+            print(f"PR #{pr_number} has a dirty state.")
+            
+            # Assign the author to the PR for a dirty state
+            assign_pr_author(pr_number, pr_author)
         else:
             print(f"PR #{pr_number} does not have conflicts. Mergeable state: {mergeable_state}")
 
