@@ -12,17 +12,16 @@ jobs:
       pr-list: ${{ steps.set-pr-list.outputs.pr-list }}
     steps:
       - name: List Open PRs
-        id: list_prs
+        id: list-prs
         run: |
           PRS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls?state=open")
           echo "Open PRs: $PRS"
-          echo "::set-output name=prs::$PRS"
+          echo "prs=$PRS" >> $GITHUB_ENV
 
       - name: Set PR List Output
         id: set-pr-list
-        run: |
-          echo "::set-output name=pr-list::${{ steps.list_prs.outputs.prs }}"
+        run: echo "::set-output name=pr-list::${{ env.prs }}"
 
   check-conflicts:
     runs-on: ubuntu-latest
@@ -30,10 +29,10 @@ jobs:
     outputs:
       conflicting-prs: ${{ steps.set-conflicting-prs.outputs.conflicting-prs }}
     steps:
-      - name: Get PR List
-        id: get-pr-list
+      - name: Parse PR List
+        id: parse-pr-list
         run: |
-          echo "::set-output name=pr-list::${{ needs.list-prs.outputs.pr-list }}"
+          echo "${{ needs.list-prs.outputs.pr-list }}" > prs.json
 
       - name: Check for Conflicts
         uses: actions/github-script@v6
@@ -41,65 +40,46 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const prList = JSON.parse('${{ steps.get-pr-list.outputs.pr-list }}');
-            const { GitHub } = require('@actions/github/lib/github');
-            const github = new GitHub(process.env.GITHUB_TOKEN);
-            const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
-
-            async function checkConflicts(prs) {
-              let conflictingPRs = [];
-              for (const pr of prs) {
-                const prDetails = await octokit.rest.pulls.get({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pr.number,
-                });
-                if (prDetails.data.mergeable_state === 'conflict') {
-                  conflictingPRs.push(prDetails.data);
-                }
+            const prs = require('./prs.json');
+            const conflictingPRs = [];
+            for (const pr of prs) {
+              const prDetails = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+              });
+              if (prDetails.data.mergeable_state === 'conflict') {
+                conflictingPRs.push({ number: pr.number, user: pr.user.login });
               }
-              return conflictingPRs;
             }
-
-            checkConflicts(prList).then(conflictingPRs => {
-              core.setOutput('conflicting-prs', JSON.stringify(conflictingPRs));
-            }).catch(console.error);
+            return JSON.stringify(conflictingPRs);
 
       - name: Set Conflicting PRs Output
         id: set-conflicting-prs
-        run: |
-          echo "::set-output name=conflicting-prs::$(echo ${{ steps.check-conflicts.outputs.result }})"
+        run: echo "::set-output name=conflicting-prs::${{ steps.check-conflicts.outputs.result }}"
 
   assign-author:
     runs-on: ubuntu-latest
     needs: check-conflicts
-    if: ${{ fromJson(needs.check-conflicts.outputs.conflicting-prs).length > 0 }}
+    if: ${{ needs.check-conflicts.outputs.conflicting-prs != '[]' }}
     steps:
-      - name: Get Conflicting PRs
-        id: get-conflicting-prs
+      - name: Parse Conflicting PRs
+        id: parse-conflicting-prs
         run: |
-          echo "::set-output name=conflicting-prs::${{ needs.check-conflicts.outputs.conflicting-prs }}"
+          echo "${{ needs.check-conflicts.outputs.conflicting-prs }}" > conflicting_prs.json
 
-      - name: Assign Author to PR
+      - name: Assign Author to PRs
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const conflictingPRs = JSON.parse('${{ steps.get-conflicting-prs.outputs.conflicting-prs }}');
-            const { GitHub } = require('@actions/github/lib/github');
-            const github = new GitHub(process.env.GITHUB_TOKEN);
-            const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
-
-            async function assignAuthor(prs) {
-              for (const pr of prs) {
-                console.log(`PR #${pr.number} has conflicts. Assigning to ${pr.user.login}.`);
-                await octokit.rest.issues.addAssignees({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr.number,
-                  assignees: [pr.user.login],
-                });
-              }
+            const conflictingPRs = require('./conflicting_prs.json');
+            for (const pr of conflictingPRs) {
+              console.log(`Assigning PR #${pr.number} to ${pr.user}.`);
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                assignees: [pr.user],
+              });
             }
-
-            assignAuthor(conflictingPRs).catch(console.error);
