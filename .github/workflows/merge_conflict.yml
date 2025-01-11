@@ -23,11 +23,16 @@ jobs:
     needs: list-prs
     steps:
       - name: Get PR List
+        id: get-pr-list
         run: |
-          PR_LIST=$(echo ${{ needs.list-prs.outputs.pr-list }} | jq -r '.')
-      
+          PR_LIST='${{ needs.list-prs.outputs.pr-list }}'
+          echo "PR_LIST=$PR_LIST" >> $GITHUB_OUTPUT
+
       - name: Check for Conflicts and Assign Author
         run: |
+          PR_LIST='${{ steps.get-pr-list.outputs.PR_LIST }}'
+          echo "PR_LIST: $PR_LIST"
+
           for pr in $(echo "$PR_LIST" | jq -r '.[] | @base64'); do
             PR=$(echo "$pr" | base64 --decode)
             PR_NUMBER=$(echo "$PR" | jq -r '.number')
