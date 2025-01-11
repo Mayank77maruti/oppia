@@ -14,6 +14,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      - name: Debug Context Payload
+        run: |
+          echo "GitHub Context: ${{ toJson(github) }}"
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Payload: ${{ toJson(github.event) }}"
+
       - name: Check for Merge Conflicts
         uses: actions/github-script@v6
         id: check-conflicts
@@ -23,49 +29,61 @@ jobs:
             const mergeConflictLabel = "PR: don't merge - HAS MERGE CONFLICTS";
 
             async function checkMergeConflicts() {
+              // Log the incoming context
+              console.log("Context Payload:", JSON.stringify(context.payload, null, 2));
+
               // Get the PR number from the context.
               const prNumber = context.payload.pull_request?.number;
 
               if (!prNumber) {
-                console.log('No PR number found. Skipping.');
+                console.log("No PR number found in the event payload. Skipping execution.");
                 return;
               }
 
-              console.log(`Checking PR #${prNumber} for merge conflicts...`);
+              console.log(`PR Number: ${prNumber}`);
 
-              let pullRequest = await github.rest.pulls.get({
+              console.log(`Fetching PR details for PR #${prNumber}...`);
+              const pullRequest = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber,
               });
 
+              console.log("PR Details:", JSON.stringify(pullRequest.data, null, 2));
+
               // Poll until mergeable status is determined.
               let attempts = 5; // Limit the number of polling attempts.
-              while (pullRequest.data.mergeable === null && attempts > 0) {
-                console.log('Mergeable status is null. Polling again...');
+              let mergeable = pullRequest.data.mergeable;
+
+              while (mergeable === null && attempts > 0) {
+                console.log("Mergeable status is null. Polling again...");
                 await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds.
-                pullRequest = await github.rest.pulls.get({
+                const updatedPR = await github.rest.pulls.get({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: prNumber,
                 });
+                mergeable = updatedPR.data.mergeable;
+                console.log(`Polled Mergeable Status: ${mergeable}`);
                 attempts--;
               }
 
-              const mergeable = pullRequest.data.mergeable;
-              console.log(`Final mergeable status: ${mergeable}`);
-
               if (mergeable === null) {
-                console.warn('Unable to determine mergeable status after polling. Skipping.');
+                console.warn("Unable to determine mergeable status after polling. Skipping execution.");
                 return;
               }
+
+              console.log(`Final Mergeable Status: ${mergeable}`);
 
               // Check if the PR has the merge conflict label.
               const hasMergeConflictLabel = pullRequest.data.labels.some(
                 label => label.name === mergeConflictLabel
               );
+              console.log(`Has Merge Conflict Label: ${hasMergeConflictLabel}`);
 
               if (!mergeable && !hasMergeConflictLabel) {
+                console.log("PR has merge conflicts and no conflict label. Adding label and notifying author...");
+
                 // Add the merge conflict label.
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
@@ -95,8 +113,10 @@ jobs:
                   assignees: [pullRequest.data.user.login],
                 });
 
-                console.log(`Added label, comment, and assigned author to PR #${prNumber}.`);
+                console.log("Added label, comment, and assigned author successfully.");
               } else if (mergeable && hasMergeConflictLabel) {
+                console.log("PR is mergeable and has the merge conflict label. Removing the label...");
+
                 // Remove the merge conflict label.
                 await github.rest.issues.removeLabel({
                   owner: context.repo.owner,
@@ -105,11 +125,14 @@ jobs:
                   name: mergeConflictLabel,
                 });
 
-                console.log(`Removed merge conflict label from PR #${prNumber}.`);
+                console.log("Removed merge conflict label successfully.");
+              } else {
+                console.log("No action required for this PR.");
               }
             }
 
             checkMergeConflicts().catch(error => {
-              console.error('Error checking merge conflicts:', error.message);
+              console.error("Error checking merge conflicts:", error.message);
+              console.error("Error details:", error);
               process.exit(1);
             });
