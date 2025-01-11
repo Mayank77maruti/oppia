@@ -1,7 +1,6 @@
 name: Sync Open PR Branches
 
 on:
-  # Trigger workflow when there's a push to the develop branch
   push:
     branches:
       - develop
@@ -13,11 +12,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-
-      - name: Set Up Node.js Environment
-        uses: actions/setup-node@v3
-        with:
-          node-version: 16
 
       - name: Install GitHub CLI
         run: |
@@ -38,11 +32,11 @@ jobs:
             echo "Syncing branch: $branch"
 
             # Use the tretuna/sync-branches action
-            gh workflow run --ref "$branch" --json \
-            uses: tretuna/sync-branches@1.4.0 \
-            with:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              FROM_BRANCH: develop
-              TO_BRANCH: $branch
+            gh pr checkout "$branch"
+            git fetch origin develop
+            git merge origin/develop --no-edit
+
+            # Push the updated branch back to the remote
+            git push origin "$branch"
 
           done < pr_branches.txt
