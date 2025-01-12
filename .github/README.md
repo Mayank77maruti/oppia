@@ -8,7 +8,7 @@
 
 
 
-The Oppia web application is built using Python, Angular, and Google App Engine. Selso:
+The Oppia web application is built using Python, Angular, and Google App Engine. Slso:
 
 
 - [Oppia.org community site](https://www.oppia.org
