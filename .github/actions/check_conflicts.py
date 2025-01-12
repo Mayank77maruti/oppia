@@ -8,6 +8,8 @@ HEADERS = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.
 RETRY_COUNT = 3
 RETRY_DELAY = 5  # seconds
 
+LABEL_CRITICAL = "PR: require post-merge sync to HEAD"
+
 def list_open_prs():
     """Fetch the list of open pull requests."""
     url = f"https://api.github.com/repos/{REPO}/pulls?state=open"
@@ -30,37 +32,76 @@ def fetch_pr_details(pr_number):
     print(f"Mergeable state could not be determined for PR #{pr_number} after retries.")
     return None
 
-def assign_pr_author(pr_number, pr_author):
-    """Assign the PR author to the pull request."""
-    assign_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/assignees"
-    assign_payload = {"assignees": [pr_author]}
-    response = requests.post(assign_url, json=assign_payload, headers=HEADERS)
+def fetch_pr_comments(pr_number):
+    """Fetch all comments for a PR."""
+    comments_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/comments"
+    response = requests.get(comments_url, headers=HEADERS)
     if response.ok:
-        print(f"Successfully assigned {pr_author} to PR #{pr_number}.")
+        return response.json()
     else:
-        print(f"Failed to assign {pr_author} to PR #{pr_number}. Response: {response.text}")
+        print(f"Failed to fetch comments for PR #{pr_number}. Response: {response.text}")
+        return []
 
-def notify_pr_author(pr_number, pr_author):
-    """Post a comment on the pull request notifying the author about merge conflicts."""
+def notify_pr_author(pr_number, pr_author, message):
+    """Notify the PR author with a comment, avoiding duplicates."""
+    existing_comments = fetch_pr_comments(pr_number)
+    for comment in existing_comments:
+        if message in comment.get("body", ""):
+            print(f"Message already exists for PR #{pr_number}. Skipping notification.")
+            return  # Skip posting if the message already exists
+
     comment_url = f"https://api.github.com/repos/{REPO}/issues/{pr_number}/comments"
-    message = (
-        f"Hi @{pr_author}. Due to recent changes in the 'develop' branch, "
-        "this PR now has a merge conflict. Please follow [this link](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/) "
-        "if you need help resolving the conflict, so that the PR can be merged. Thanks!"
-    )
-    response = requests.post(comment_url, json={"body": message}, headers=HEADERS)
+    comment_payload = {"body": message}
+    response = requests.post(comment_url, json=comment_payload, headers=HEADERS)
     if response.ok:
-        print(f"Notified {pr_author} about merge conflicts on PR #{pr_number}.")
+        print(f"Successfully notified {pr_author} for PR #{pr_number}.")
     else:
-        print(f"Failed to notify {pr_author} about merge conflicts on PR #{pr_number}. Response: {response.text}")
+        print(f"Failed to notify {pr_author} for PR #{pr_number}. Response: {response.text}")
+
+def auto_merge_branch(base_branch, head_branch):
+    """Attempt to auto-merge a branch."""
+    merge_url = f"https://api.github.com/repos/{REPO}/merges"
+    merge_payload = {
+        "base": base_branch,
+        "head": head_branch
+    }
+    response = requests.post(merge_url, json=merge_payload, headers=HEADERS)
+    if response.ok:
+        print(f"Successfully merged {head_branch} into {base_branch}.")
+    else:
+        print(f"Failed to merge {head_branch} into {base_branch}. Response: {response.text}")
+
+def handle_critical_pr(pr):
+    """Handle a critical PR with the specific label."""
+    pr_number = pr["number"]
+    pr_author = pr["user"]["login"]
+    base_branch = "develop"  # Replace with your main branch if different
+    head_branch = pr["head"]["ref"]
+
+    # Notify the PR author to sync their branch
+    message = (
+        f"Hi @{pr_author}, your PR #{pr_number} is critical and requires syncing to the HEAD of the `{base_branch}` branch. "
+        "Please follow [this guide](https://help.github.com/articles/syncing-a-fork/) to update your branch. "
+        "Alternatively, you can request auto-syncing from the maintainers."
+    )
+    notify_pr_author(pr_number, pr_author, message)
+
+    # Optional: Auto-merge the branch
+    auto_merge_branch(base_branch, head_branch)
 
 def check_and_notify(prs):
-    """Check for merge conflicts and notify the PR author if conflicts are present."""
+    """Check for merge conflicts, dirty state, or critical PRs and notify appropriately."""
     for pr in prs:
         pr_number = pr["number"]
         pr_author = pr["user"]["login"]
+        labels = [label["name"] for label in pr.get("labels", [])]
 
         print(f"Checking PR #{pr_number} by {pr_author}.")
+
+        if LABEL_CRITICAL in labels:
+            print(f"PR #{pr_number} is marked as critical.")
+            handle_critical_pr(pr)
+            continue
 
         # Fetch PR details with retries
         pr_details = fetch_pr_details(pr_number)
@@ -73,13 +114,23 @@ def check_and_notify(prs):
         if mergeable_state == "conflict":
             print(f"PR #{pr_number} has conflicts.")
 
-            # Notify the PR author
-            notify_pr_author(pr_number, pr_author)
+            # Notify the PR author about the conflict
+            message = (
+                f"Hi @{pr_author}, your PR #{pr_number} has a **merge conflict**. "
+                "Please resolve it by following [this guide](https://help.github.com/articles/resolving-a-merge-conflict-using-the-command-line/)."
+            )
+            notify_pr_author(pr_number, pr_author, message)
+        elif mergeable_state == "dirty":
+            print(f"PR #{pr_number} has a dirty state.")
 
-            # Assign the author to the PR
-            assign_pr_author(pr_number, pr_author)
+            # Notify the PR author about the dirty state
+            message = (
+                f"Hi @{pr_author}, your PR #{pr_number} has a **dirty state**. "
+                "Please resolve it by syncing your branch with the target branch."
+            )
+            notify_pr_author(pr_number, pr_author, message)
         else:
-            print(f"PR #{pr_number} does not have conflicts. Mergeable state: {mergeable_state}")
+            print(f"PR #{pr_number} is clean. Mergeable state: {mergeable_state}")
 
 if __name__ == "__main__":
     try:
