@@ -1,0 +1,40 @@
+name: Auto Sync Branch with Develop
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  auto-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Get Merged PR
+        id: merged_pr
+        run: |
+          python .github/actions/get_merged_pr.py
+
+      - name: Check if the PR has the required label
+        id: check_label
+        run: |
+          python .github/actions/check_pr_label.py
+
+      - name: Run Auto Sync Script
+        if: ${{ steps.check_label.outputs.sync == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          python .github/actions/auto_sync_pr_critical.py
